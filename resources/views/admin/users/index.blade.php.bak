@@ -1,0 +1,263 @@
+@extends('layouts.app')
+@section('title', 'Empleados y Accesos')
+
+@section('content')
+<div x-data="{ showForm: false, editUser: null }" class="space-y-5 max-w-6xl">
+
+    @php
+        $users = $users ?? collect();
+        $roles = $roles ?? collect();
+        $areas = $areas ?? collect();
+        $positionTypes = $positionTypes ?? collect();
+
+        $activeUsers = $users->where('is_active', true);
+        $usersByArea = $activeUsers->groupBy(fn($u) => $u->area?->name ?? 'Sin area');
+    @endphp
+
+    <div class="flex items-center justify-between anim-slide-left">
+        <div>
+            <h1 class="text-xl font-bold text-slate-800">Empleados y accesos</h1>
+            <p class="text-slate-500 text-sm mt-0.5">{{ count($users) }} usuario(s) registrados · {{ $activeUsers->count() }} activos</p>
+        </div>
+        <button @click="showForm=!showForm; editUser=null"
+                class="btn-bounce inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-500 text-white font-semibold px-4 py-2.5 rounded-xl transition-all shadow-md shadow-teal-500/20 text-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Nuevo usuario
+        </button>
+    </div>
+
+    <div class="anim-fade-up bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+                <h3 class="font-semibold text-slate-800">Actualizacion masiva desde Excel</h3>
+                <p class="text-slate-500 text-sm mt-1">Esta carga mantiene usuarios activos por area, actualiza login y contrasena con la cedula, y reasigna superusuarios automaticamente.</p>
+            </div>
+        </div>
+
+        <form method="POST" action="{{ route('admin.users.import-excel') }}" enctype="multipart/form-data" class="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-end">
+            @csrf
+            <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Archivo Excel</label>
+                <input type="file" name="employees_file" accept=".xlsx,.xls,.csv" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200">
+            </div>
+            <button type="submit" class="px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm">Cargar y sincronizar</button>
+        </form>
+
+        <div class="text-xs text-slate-500 leading-relaxed bg-slate-50 border border-slate-200 rounded-xl p-3">
+            Columnas recomendadas: <strong>cedula, nombres, apellidos, area, cargo, email, telefono, activo</strong>.<br>
+            Reglas de superusuario: <strong>Recursos Humanos + Jefe de Recursos Humanos</strong> y <strong>Gerencia + Gerente</strong>.
+        </div>
+    </div>
+
+    <div class="anim-fade-up bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+        <h3 class="text-sm font-semibold text-slate-700 mb-3">Activos por area</h3>
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+            @forelse($usersByArea as $areaName => $areaUsers)
+                <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p class="text-xs text-slate-500 truncate">{{ $areaName }}</p>
+                    <p class="text-lg font-bold text-slate-800">{{ $areaUsers->count() }}</p>
+                </div>
+            @empty
+                <p class="text-sm text-slate-400">No hay empleados activos registrados.</p>
+            @endforelse
+        </div>
+    </div>
+
+    {{-- Create form --}}
+    <div x-show="showForm && !editUser" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 -translate-y-2" x-transition:enter-end="opacity-100 translate-y-0" class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <h3 class="font-semibold text-slate-800 mb-4">Nuevo empleado / usuario</h3>
+        <form method="POST" action="{{ route('admin.users.store') }}">
+            @csrf
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Nombres</label>
+                    <input type="text" name="first_name" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Apellidos</label>
+                    <input type="text" name="last_name" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">N° Documento</label>
+                    <input type="text" name="document_number" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Email</label>
+                    <input type="email" name="email" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Usuario (login)</label>
+                    <input type="text" name="login" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Contraseña</label>
+                    <input type="password" name="password" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Área</label>
+                    <select name="area_id" id="new-area" onchange="loadPositions(this.value,'new-position')"
+                            class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                        <option value="">Sin área</option>
+                        @foreach($areas as $a)
+                        <option value="{{ $a->id }}">{{ $a->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Cargo</label>
+                    <select name="position_type_id" id="new-position"
+                            class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                        <option value="">Sin cargo</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Código empleado</label>
+                    <input type="text" name="employee_code" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent" placeholder="Ej: EMP-007">
+                </div>
+            </div>
+            <div class="mt-4">
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Rol(es)</label>
+                <div class="flex flex-wrap gap-3">
+                    @foreach($roles as $r)
+                    <label class="flex items-center gap-2 cursor-pointer select-none bg-slate-50 hover:bg-slate-100 px-3 py-2 rounded-xl border border-slate-200 transition-colors">
+                        <input type="checkbox" name="role_ids[]" value="{{ $r->id }}" class="w-4 h-4 rounded text-teal-600 focus:ring-teal-500">
+                        <span class="text-sm text-slate-700">{{ $r->description }}</span>
+                    </label>
+                    @endforeach
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 mt-5">
+                <button type="button" @click="showForm=false" class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
+                <button type="submit" class="px-5 py-2 bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm">Crear usuario</button>
+            </div>
+        </form>
+    </div>
+
+    {{-- Users table --}}
+    <div class="anim-fade-up bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        @forelse($users as $u)
+        <div id="user-row-{{ $u->id }}" class="border-b border-slate-100 last:border-0">
+
+            {{-- User row --}}
+            <div class="flex items-center gap-3 px-5 py-4 row-hover">
+                <div class="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-bold text-sm flex-shrink-0">
+                    {{ strtoupper(substr($u->name, 0, 1)) }}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <p class="font-semibold text-slate-800 text-sm">{{ $u->name }}</p>
+                        @foreach($u->roles as $r)
+                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-teal-50 text-teal-700 border border-teal-100">{{ $r->description }}</span>
+                        @endforeach
+                        @if(!$u->is_active)
+                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-rose-50 text-rose-600">Inactivo</span>
+                        @endif
+                    </div>
+                    <div class="flex items-center gap-3 mt-0.5 text-xs text-slate-400">
+                        <span>@{{ $u->login }}</span>
+                        @if($u->area)<span>· {{ $u->area->name }}</span>@endif
+                        @if($u->positionType)<span>· {{ $u->positionType->name }}</span>@endif
+                    </div>
+                </div>
+                <button type="button" onclick="toggleEditRow({{ $u->id }})"
+                        class="w-8 h-8 rounded-lg bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 transition-colors flex-shrink-0">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+                </button>
+            </div>
+
+            {{-- Inline edit form --}}
+            <div id="edit-{{ $u->id }}" class="hidden border-t border-dashed border-slate-200 bg-slate-50 px-5 py-4">
+                <form method="POST" action="{{ route('admin.users.update', $u) }}">
+                    @csrf @method('PUT')
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4 text-sm">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Nombres</label>
+                            <input type="text" name="first_name" value="{{ $u->person?->first_name }}" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Apellidos</label>
+                            <input type="text" name="last_name" value="{{ $u->person?->last_name }}" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">N° Documento</label>
+                            <input type="text" name="document_number" value="{{ $u->person?->document_number }}" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Usuario</label>
+                            <input type="text" name="login" value="{{ $u->login }}" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Nueva contraseña <span class="text-slate-400 font-normal">(dejar vacío para no cambiar)</span></label>
+                            <input type="password" name="password" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Área</label>
+                            <select name="area_id" id="edit-area-{{ $u->id }}" onchange="loadPositions(this.value,'edit-pos-{{ $u->id }}')"
+                                    class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white">
+                                <option value="">Sin área</option>
+                                @foreach($areas as $a)
+                                <option value="{{ $a->id }}" {{ $u->area_id == $a->id ? 'selected' : '' }}>{{ $a->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Cargo</label>
+                            <select name="position_type_id" id="edit-pos-{{ $u->id }}"
+                                    class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white">
+                                <option value="">Sin cargo</option>
+                                @foreach($positionTypes as $pt)
+                                <option value="{{ $pt->id }}" {{ $u->position_type_id == $pt->id ? 'selected' : '' }}>{{ $pt->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Rol(es)</label>
+                        <div class="flex flex-wrap gap-2">
+                            @foreach($roles as $r)
+                            <label class="flex items-center gap-2 cursor-pointer select-none bg-white px-3 py-1.5 rounded-xl border border-slate-200 hover:border-teal-300 transition-colors text-sm">
+                                <input type="checkbox" name="role_ids[]" value="{{ $r->id }}" {{ $u->roles->contains($r) ? 'checked' : '' }} class="w-4 h-4 rounded text-teal-600 focus:ring-teal-500">
+                                {{ $r->description }}
+                            </label>
+                            @endforeach
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <label class="flex items-center gap-2 cursor-pointer select-none text-sm">
+                            <input type="hidden" name="is_active" value="0">
+                            <input type="checkbox" name="is_active" value="1" {{ $u->is_active ? 'checked' : '' }} class="w-4 h-4 rounded text-teal-600">
+                            <span class="text-slate-600">Activo</span>
+                        </label>
+                        <div class="ml-auto flex gap-2">
+                            <button type="button" onclick="toggleEditRow({{ $u->id }})" class="px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
+                            <button type="submit" class="px-4 py-1.5 bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold rounded-xl transition-colors">Guardar</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        @empty
+        <div class="py-12 text-center text-slate-400 text-sm">No hay usuarios registrados</div>
+        @endforelse
+    </div>
+
+</div>
+@endsection
+
+@push('scripts')
+<script>
+function toggleEditRow(id) {
+    document.getElementById('edit-'+id).classList.toggle('hidden');
+}
+function loadPositions(areaId, targetId) {
+    const sel = document.getElementById(targetId);
+    if (!areaId) { sel.innerHTML = '<option value="">Sin cargo</option>'; return; }
+    fetch(`/admin/api/areas/${areaId}/position-types`)
+        .then(r => r.json())
+        .then(data => {
+            sel.innerHTML = '<option value="">Sin cargo</option>' +
+                data.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+        });
+}
+</script>
+@endpush

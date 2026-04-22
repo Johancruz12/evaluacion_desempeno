@@ -1,0 +1,842 @@
+@extends('layouts.app')
+@section('title', 'Evaluación')
+
+@php
+    $user        = auth()->user();
+    $isEmployee  = $user->isEmpleado() && $evaluation->employee_id === $user->id;
+    $isEvaluator = $user->isJefeArea() || $user->isAdmin();
+    $isReadOnly  = in_array($evaluation->status, ['completada', 'revisada']);
+    $canBuild    = !$isReadOnly && $isEvaluator;
+    $responsesMap = $evaluation->responses->keyBy('criteria_id');
+
+    $scaleLabels = [1 => 'Deficiente', 2 => 'Regular', 3 => 'Cumple', 4 => 'Supera', 5 => 'Sobresale'];
+    $scaleColors = ['1'=>'rose','2'=>'orange','3'=>'amber','4'=>'blue','5'=>'emerald'];
+
+    $sectionMeta = [
+        'competencias_org'   => ['icon'=>'🧠','label'=>'Comp. Organizacionales','from'=>'from-teal-50','border'=>'border-teal-300','badge'=>'bg-teal-100 text-teal-700'],
+        'competencias_cargo' => ['icon'=>'💼','label'=>'Comp. del Cargo','from'=>'from-cyan-50','border'=>'border-cyan-300','badge'=>'bg-cyan-100 text-cyan-700'],
+        'responsabilidades'  => ['icon'=>'✅','label'=>'Responsabilidades','from'=>'from-amber-50','border'=>'border-amber-300','badge'=>'bg-amber-100 text-amber-700'],
+        'rango'              => ['icon'=>'📊','label'=>'Tabla de Rangos','from'=>'from-teal-50','border'=>'border-teal-300','badge'=>'bg-teal-100 text-teal-700'],
+    ];
+
+    $completedCount = $responsesMap->filter(function($r) use ($isEmployee) {
+        return $isEmployee ? $r->auto_score !== null : $r->evaluator_score !== null;
+    })->count();
+    $rangoCount = 0;
+    foreach ($evaluation->template?->sections ?? [] as $_sec) {
+        if ($_sec->type === 'rango') {
+            $rangoCount += $_sec->criteria->count();
+        }
+    }
+    $totalCount = $responsesMap->count() - $rangoCount;
+    $pct = $totalCount > 0 ? round($completedCount / $totalCount * 100) : 0;
+
+    $scoresJson = [];
+    foreach ($responsesMap as $id => $r) {
+        $scoresJson[$id] = [
+            'auto'      => $r->auto_score      ? (int)$r->auto_score      : null,
+            'evaluator' => $r->evaluator_score ? (int)$r->evaluator_score : null,
+            'comment'   => $r->comment ?? '',
+        ];
+    }
+
+    $evalDataPayload = [
+        'evalId'      => $evaluation->id,
+        'templateId'  => $evaluation->template_id,
+        'isEmployee'  => $isEmployee,
+        'isEvaluator' => $isEvaluator,
+        'isReadOnly'  => $isReadOnly,
+        'canBuild'    => $canBuild,
+        'csrf'        => csrf_token(),
+        'scores'      => $scoresJson,
+        'totals'      => [
+            'auto'      => (float)($evaluation->total_auto_score ?? 0),
+            'evaluator' => (float)($evaluation->total_evaluator_score ?? 0),
+            'final'     => (float)($evaluation->final_score ?? 0),
+        ],
+        'routes' => [
+            'reorder'     => route('evaluations.builder.reorder', $evaluation),
+            'toggle'      => '/evaluations/'.$evaluation->id.'/builder/toggle',
+            'addSection'  => route('evaluations.builder.add-section', $evaluation),
+            'addCriteria' => '/evaluations/'.$evaluation->id.'/builder/add-criteria',
+            'rmCriteria'  => '/evaluations/'.$evaluation->id.'/builder/criteria',
+            'saveScore'   => '/evaluations/'.$evaluation->id.'/score',
+        ],
+        'statusUrl' => route('evaluations.complete', $evaluation),
+        'saveUrl'   => route('evaluations.save-responses', $evaluation),
+    ];
+@endphp
+
+@section('content')
+<div x-data="evalBuilder()" x-init="init()" class="relative max-w-5xl space-y-5">
+
+    {{-- ── TOP HEADER ── --}}
+    <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+        <div>
+            <a href="{{ route('evaluations.index') }}" class="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-teal-600 mb-2 transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                Evaluaciones
+            </a>
+            <h1 class="text-lg font-bold text-slate-800">{{ $evaluation->template?->name }}</h1>
+            <div class="flex items-center gap-2 mt-1 flex-wrap">
+                <span class="text-sm text-slate-500">{{ $evaluation->employee?->name }}</span>
+                @if($evaluation->employee?->area)
+                    <span class="text-slate-300">·</span>
+                    <span class="text-xs text-slate-400">{{ $evaluation->employee->area->name }}</span>
+                @endif
+                <span class="text-slate-300">·</span>
+                <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium
+                    {{ $evaluation->status === 'completada' ? 'bg-emerald-100 text-emerald-700' :
+                       ($evaluation->status === 'en_progreso' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600') }}">
+                    {{ match($evaluation->status) { 'pendiente'=>'Pendiente','en_progreso'=>'En progreso','completada'=>'Completada','revisada'=>'Revisada',default=>ucfirst($evaluation->status) } }}
+                </span>
+                <span class="inline-flex px-2 py-0.5 rounded-full text-xs bg-teal-50 text-teal-700">{{ ucfirst($evaluation->period_type) }} · {{ $evaluation->period }}</span>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap sm:justify-end">
+            {{-- Score summary rings --}}
+            <div class="flex items-center gap-2 bg-white rounded-2xl border border-slate-200 px-4 py-2 shadow-sm">
+                <div class="text-center">
+                    <p class="text-[10px] font-semibold text-slate-400 uppercase">Auto</p>
+                    <p class="text-lg font-bold text-teal-600" x-text="totals.auto.toFixed(1)"></p>
+                </div>
+                @if($isEvaluator)
+                <div class="w-px h-8 bg-slate-200 mx-1"></div>
+                <div class="text-center">
+                    <p class="text-[10px] font-semibold text-slate-400 uppercase">Jefe</p>
+                    <p class="text-lg font-bold text-cyan-600" x-text="totals.evaluator.toFixed(1)"></p>
+                </div>
+                @endif
+                <div class="w-px h-8 bg-slate-200 mx-1"></div>
+                <div class="text-center">
+                    <p class="text-[10px] font-semibold text-slate-400 uppercase">Final</p>
+                    <p class="text-lg font-bold text-emerald-600" x-text="totals.final.toFixed(1)"></p>
+                </div>
+            </div>
+
+            @if($canBuild)
+            {{-- Edit structure toggle --}}
+            <button @click="editMode = !editMode"
+                    :class="editMode ? 'bg-teal-600 text-white shadow-teal-300 shadow-md' : 'bg-white text-slate-600 border border-slate-200'"
+                    class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h8M10 18h4"/></svg>
+                <span x-text="editMode ? 'Salir del editor' : 'Editar estructura'"></span>
+            </button>
+            @endif
+
+            @if($isEvaluator && !$isReadOnly)
+            <form method="POST" action="{{ route('evaluations.complete', $evaluation) }}">
+                @csrf
+                <button type="submit" onclick="return confirm('¿Confirmar cierre? La evaluación ya no podrá modificarse.')"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-semibold transition-all shadow-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Completar
+                </button>
+            </form>
+            @endif
+        </div>
+    </div>
+
+    {{-- Progress bar --}}
+    @if(!$isReadOnly)
+    <div class="bg-white rounded-2xl border border-slate-200 px-5 py-3 shadow-sm">
+        <div class="flex items-center justify-between text-xs text-slate-500 mb-2">
+            <span>Progreso de calificación</span>
+            <span><span class="font-bold text-slate-700" x-text="completedCount"></span> / <span x-text="totalCount"></span> criterios completados</span>
+        </div>
+        <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+            <div class="h-2 rounded-full transition-all duration-700"
+                 :class="progress >= 100 ? 'bg-emerald-500' : (progress >= 50 ? 'bg-teal-500' : 'bg-amber-400')"
+                 :style="`width: ${progress}%`"></div>
+        </div>
+    </div>
+    @endif
+
+    {{-- Autosave toast --}}
+    <div x-show="saveState === 'saving'" x-transition class="fixed top-20 right-5 z-50 flex items-center gap-2 bg-white border border-slate-200 shadow-lg rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 pointer-events-none">
+        <svg class="w-4 h-4 animate-spin text-teal-500" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+        Guardando…
+    </div>
+    <div x-show="saveState === 'saved'" x-transition class="fixed top-20 right-5 z-50 flex items-center gap-2 bg-emerald-50 border border-emerald-200 shadow-lg rounded-xl px-4 py-2.5 text-sm font-semibold text-emerald-700 pointer-events-none">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+        Guardado
+    </div>
+
+    {{-- ── BUILDER PANEL (right drawer) ── --}}
+    <div x-show="editMode" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-x-8" x-transition:enter-end="opacity-100 translate-x-0"
+         class="bg-white rounded-2xl border-2 border-dashed border-teal-300 shadow-sm p-5 space-y-4">
+        <div class="flex items-center justify-between">
+            <h3 class="font-bold text-slate-700 flex items-center gap-2">
+                <span class="w-7 h-7 rounded-lg bg-teal-600 text-white flex items-center justify-center">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                </span>
+                Agregar sección
+            </h3>
+            <p class="text-xs text-slate-400">Haz clic en un bloque para añadirlo</p>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            @foreach($sectionMeta as $type => $meta)
+            @if($type !== 'rango')
+            <button type="button" @click="promptAddSection('{{ $type }}')"
+                    class="group flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-slate-200 hover:border-teal-400 hover:bg-teal-50 transition-all duration-200 cursor-pointer">
+                <span class="text-2xl">{{ $meta['icon'] }}</span>
+                <span class="text-xs font-semibold text-slate-600 group-hover:text-teal-700 text-center leading-tight">{{ $meta['label'] }}</span>
+            </button>
+            @endif
+            @endforeach
+            <button type="button" @click="promptAddSection('rango')"
+                    class="group flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-slate-200 hover:border-teal-400 hover:bg-teal-50 transition-all duration-200 cursor-pointer">
+                <span class="text-2xl">📊</span>
+                <span class="text-xs font-semibold text-slate-600 group-hover:text-teal-700 text-center leading-tight">Tabla de Rangos</span>
+            </button>
+        </div>
+
+        {{-- Add section form (shown after click) --}}
+        <div x-show="addSectionForm.show" x-transition class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+            <p class="text-sm font-semibold text-slate-700">
+                Nueva sección: <span class="text-teal-600" x-text="addSectionForm.typeLabel"></span>
+            </p>
+            <div class="flex gap-3">
+                <input type="text" x-model="addSectionForm.name" placeholder="Nombre de la sección…"
+                       class="flex-1 px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                       @keydown.enter="submitAddSection()">
+                <button type="button" @click="submitAddSection()"
+                        class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold rounded-xl transition-colors">Agregar</button>
+                <button type="button" @click="addSectionForm.show=false"
+                        class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-medium rounded-xl transition-colors">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    {{-- ── SCALE LEGEND ── --}}
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-3">
+        <div class="flex flex-wrap gap-2 items-center">
+            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-1">Escala:</span>
+            @foreach($scaleLabels as $v => $lbl)
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold
+                {{ $v==1?'bg-rose-100 text-rose-700':($v==2?'bg-orange-100 text-orange-700':($v==3?'bg-amber-100 text-amber-700':($v==4?'bg-blue-100 text-blue-700':'bg-emerald-100 text-emerald-700'))) }}">
+                <span class="font-black">{{ $v }}</span>{{ $lbl }}
+            </span>
+            @endforeach
+        </div>
+    </div>
+
+    {{-- ── SECTIONS (main draggable container) ── --}}
+    <div id="sections-container" class="space-y-4">
+
+        @foreach($evaluation->template?->sections->sortBy('order') ?? [] as $section)
+        <div class="section-card bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-200"
+             id="section-{{ $section->id }}"
+             data-section-id="{{ $section->id }}"
+             :class="!sectionsActive[{{ $section->id }}] ? 'opacity-50 border-dashed' : ''">
+
+            {{-- Section header --}}
+            <div class="flex items-center gap-3 px-5 py-4 {{ $sectionMeta[$section->type]['from'] ?? 'from-slate-50' }} bg-gradient-to-r to-transparent border-b border-slate-200/60">
+
+                {{-- Drag handle (edit mode only) --}}
+                <div x-show="editMode" class="drag-handle cursor-grab active:cursor-grabbing flex-shrink-0 text-slate-300 hover:text-slate-500 transition-colors mr-1">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                </div>
+
+                <span class="text-xl flex-shrink-0">{{ $sectionMeta[$section->type]['icon'] ?? '📋' }}</span>
+
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <h3 class="font-bold text-slate-800 text-sm">{{ $section->name }}</h3>
+                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium {{ $sectionMeta[$section->type]['badge'] ?? 'bg-slate-100 text-slate-600' }}">
+                            {{ $sectionMeta[$section->type]['label'] ?? $section->type }}
+                        </span>
+                    </div>
+                    @if($section->description)
+                    <p class="text-xs text-slate-400 mt-0.5">{{ $section->description }}</p>
+                    @endif
+                </div>
+
+                {{-- Section progress badge --}}
+                @if($section->type !== 'rango')
+                @php
+                    $secCriteriaIds = $section->criteria->where('is_active',true)->pluck('id')->toArray();
+                    $secDone = 0;
+                    $secTotal = count($secCriteriaIds);
+                    foreach ($secCriteriaIds as $_cid) {
+                        $r = $responsesMap[$_cid] ?? null;
+                        if ($r && ($isEmployee ? $r->auto_score !== null : $r->evaluator_score !== null)) $secDone++;
+                    }
+                @endphp
+                <span class="flex-shrink-0 text-xs font-medium px-2.5 py-1 rounded-full {{ $secDone==$secTotal && $secTotal>0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500' }}">
+                    {{ $secDone }}/{{ $secTotal }}
+                </span>
+                @endif
+
+                {{-- Toggle visibility (edit mode) --}}
+                @if($canBuild)
+                <button x-show="editMode" type="button"
+                        @click="toggleSection({{ $section->id }})"
+                        :class="sectionsActive[{{ $section->id }}] ? 'text-amber-500 bg-amber-50 hover:bg-amber-100' : 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100'"
+                        class="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path x-show="sectionsActive[{{ $section->id }}]" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 4.411m0 0L21 21"/>
+                        <path x-show="!sectionsActive[{{ $section->id }}]" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                    </svg>
+                </button>
+                @endif
+
+                {{-- Collapse toggle --}}
+                <button type="button" @click="openSections[{{ $section->id }}] = !openSections[{{ $section->id }}]"
+                        class="flex-shrink-0 w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-400 transition-all duration-200"
+                        :class="openSections[{{ $section->id }}] ? 'rotate-180' : ''">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+            </div>
+
+            {{-- Section body --}}
+            <div x-show="openSections[{{ $section->id }}]" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 -translate-y-2" x-transition:enter-end="opacity-100 translate-y-0">
+
+                @if($section->type === 'rango')
+                {{-- Scoring ranges table --}}
+                <div class="p-5">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="bg-slate-50 rounded-xl">
+                                <th class="px-4 py-2.5 text-left font-semibold text-slate-600">Rango de Puntos</th>
+                                <th class="px-4 py-2.5 text-left font-semibold text-slate-600">Resultado</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            @foreach($evaluation->template->scoringRanges ?? [] as $range)
+                            <tr>
+                                <td class="px-4 py-2.5 font-medium text-slate-700">{{ $range->min_score }} – {{ $range->max_score }}</td>
+                                <td class="px-4 py-2.5 font-semibold
+                                    {{ $range->color === 'green' ? 'text-emerald-700' :
+                                       ($range->color === 'blue' ? 'text-blue-700' :
+                                       ($range->color === 'yellow' ? 'text-amber-700' : 'text-rose-700')) }}">
+                                    {{ $range->label }}
+                                </td>
+                            </tr>
+                            @endforeach
+                            @if(!($evaluation->template->scoringRanges ?? [])->count())
+                            <tr><td class="px-4 py-2.5 text-left">91 – 110</td><td class="px-4 py-2.5 font-semibold text-emerald-700">Sobrepasa las expectativas</td></tr>
+                            <tr><td class="px-4 py-2.5 text-left">71 – 90</td><td class="px-4 py-2.5 font-semibold text-blue-700">Buen desempeño</td></tr>
+                            <tr><td class="px-4 py-2.5 text-left">50 – 70</td><td class="px-4 py-2.5 font-semibold text-amber-700">Cumple las expectativas</td></tr>
+                            <tr><td class="px-4 py-2.5 text-left">&lt; 50</td><td class="px-4 py-2.5 font-semibold text-rose-700">Requiere mejora</td></tr>
+                            @endif
+                        </tbody>
+                    </table>
+                </div>
+
+                @else
+                {{-- Criteria rows --}}
+                <div class="divide-y divide-slate-100" id="criteria-{{ $section->id }}">
+                    @foreach($section->criteria->where('is_active',true)->sortBy('order') as $c)
+                    @php $resp = $responsesMap[$c->id] ?? null; @endphp
+                    <div class="px-5 py-4 hover:bg-slate-50/60 transition-colors" id="row-{{ $c->id }}" data-criteria-id="{{ $c->id }}">
+                        <div class="flex flex-col lg:flex-row lg:items-start gap-4">
+
+                            {{-- Criteria info --}}
+                            <div class="lg:w-5/12">
+                                <p class="font-semibold text-slate-800 text-sm leading-snug">{{ $c->name }}</p>
+                                @if($c->description)
+                                <p class="text-xs text-slate-400 mt-0.5 leading-relaxed">{{ $c->description }}</p>
+                                @endif
+                                <input type="hidden" name="responses[{{ $c->id }}][criteria_id]" value="{{ $c->id }}">
+                            </div>
+
+                            {{-- Score buttons --}}
+                            <div class="flex flex-col sm:flex-row sm:items-center gap-3 flex-1">
+
+                                @if($isEmployee && !$isReadOnly)
+                                {{-- Auto score buttons --}}
+                                <div class="flex flex-col gap-1.5">
+                                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Mi calificación</span>
+                                    <div class="flex gap-1.5">
+                                        @foreach([1,2,3,4,5] as $v)
+                                        <button type="button"
+                                                @click="setScore({{ $c->id }}, 'auto', {{ $v }})"
+                                                :class="scores[{{ $c->id }}]?.auto === {{ $v }} ? scoreActiveClass({{ $v }}) : 'bg-slate-100 hover:bg-slate-200 text-slate-500'"
+                                                class="w-9 h-9 rounded-full font-bold text-sm transition-all duration-150 hover:scale-110 active:scale-95 focus:outline-none">
+                                            {{ $v }}
+                                        </button>
+                                        @endforeach
+                                    </div>
+                                    <input type="hidden" name="responses[{{ $c->id }}][auto_score]" id="auto-{{ $c->id }}" value="{{ $resp?->auto_score }}">
+                                </div>
+                                @elseif(!$isEmployee)
+                                {{-- Read-only auto score --}}
+                                <div class="flex flex-col gap-1.5">
+                                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Autoevaluación</span>
+                                    @if($resp?->auto_score)
+                                    <span class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold
+                                        {{ (int)$resp->auto_score>=5?'bg-emerald-100 text-emerald-700':((int)$resp->auto_score>=4?'bg-blue-100 text-blue-700':((int)$resp->auto_score>=3?'bg-amber-100 text-amber-700':((int)$resp->auto_score>=2?'bg-orange-100 text-orange-700':'bg-rose-100 text-rose-700'))) }}">
+                                        {{ $resp->auto_score }} — {{ $scaleLabels[(int)$resp->auto_score] }}
+                                    </span>
+                                    @else
+                                    <span class="text-xs text-slate-300 italic">Sin calificar</span>
+                                    @endif
+                                    <input type="hidden" name="responses[{{ $c->id }}][auto_score]" value="{{ $resp?->auto_score }}">
+                                </div>
+                                @endif
+
+                                @if($isEvaluator)
+                                {{-- Evaluator score buttons --}}
+                                <div class="flex flex-col gap-1.5">
+                                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Calificación jefe</span>
+                                    @if(!$isReadOnly)
+                                    <div class="flex gap-1.5">
+                                        @foreach([1,2,3,4,5] as $v)
+                                        <button type="button"
+                                                @click="setScore({{ $c->id }}, 'evaluator', {{ $v }})"
+                                                :class="scores[{{ $c->id }}]?.evaluator === {{ $v }} ? scoreActiveClass({{ $v }}) : 'bg-slate-100 hover:bg-slate-200 text-slate-500'"
+                                                class="w-9 h-9 rounded-full font-bold text-sm transition-all duration-150 hover:scale-110 active:scale-95 focus:outline-none">
+                                            {{ $v }}
+                                        </button>
+                                        @endforeach
+                                    </div>
+                                    <input type="hidden" name="responses[{{ $c->id }}][evaluator_score]" id="eval-{{ $c->id }}" value="{{ $resp?->evaluator_score }}">
+                                    @else
+                                    @if($resp?->evaluator_score)
+                                    <span class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold
+                                        {{ (int)$resp->evaluator_score>=5?'bg-emerald-100 text-emerald-700':((int)$resp->evaluator_score>=4?'bg-blue-100 text-blue-700':((int)$resp->evaluator_score>=3?'bg-amber-100 text-amber-700':((int)$resp->evaluator_score>=2?'bg-orange-100 text-orange-700':'bg-rose-100 text-rose-700'))) }}">
+                                        {{ $resp->evaluator_score }} — {{ $scaleLabels[(int)$resp->evaluator_score] }}
+                                    </span>
+                                    @else
+                                    <span class="text-xs text-slate-300 italic">Sin calificar</span>
+                                    @endif
+                                    @endif
+                                </div>
+
+                                {{-- Average --}}
+                                @php
+                                    $avg = null;
+                                    if($resp?->auto_score!==null && $resp?->evaluator_score!==null) $avg=round(((float)$resp->auto_score+(float)$resp->evaluator_score)/2,1);
+                                    elseif($resp?->auto_score!==null) $avg=(float)$resp->auto_score;
+                                @endphp
+                                <div class="flex flex-col gap-1.5">
+                                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Promedio</span>
+                                    <div class="w-10 h-10 rounded-full flex items-center justify-center font-black text-sm
+                                        {{ $avg!==null ? (($avg>=4.5?'bg-emerald-100 text-emerald-700':($avg>=3.5?'bg-blue-100 text-blue-700':($avg>=2.5?'bg-amber-100 text-amber-700':'bg-rose-100 text-rose-700')))) : 'bg-slate-100 text-slate-300' }}"
+                                        id="avg-{{ $c->id }}">
+                                        {{ $avg !== null ? $avg : '—' }}
+                                    </div>
+                                </div>
+
+                                {{-- Comment --}}
+                                @if(!$isReadOnly)
+                                <div class="flex-1 flex flex-col gap-1.5">
+                                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Observación</span>
+                                    <input type="text" name="responses[{{ $c->id }}][comment]"
+                                           value="{{ $resp?->comment }}"
+                                           placeholder="Comentario opcional…"
+                                           class="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-teal-400 focus:border-transparent bg-white hover:border-slate-300 transition-colors">
+                                </div>
+                                @else
+                                <div class="flex-1">
+                                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Observación</span>
+                                    <span class="text-xs text-slate-500">{{ $resp?->comment ?? '—' }}</span>
+                                </div>
+                                @endif
+                                @endif
+                            </div>
+
+                            {{-- Remove criteria button (edit mode) --}}
+                            @if($canBuild)
+                            <button x-show="editMode" type="button"
+                                    @click="removeCriteria({{ $c->id }}, {{ $section->id }})"
+                                    class="flex-shrink-0 w-8 h-8 rounded-lg bg-rose-50 hover:bg-rose-100 flex items-center justify-center text-rose-400 hover:text-rose-600 transition-colors self-start mt-1">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                            @endif
+                        </div>
+                    </div>
+                    @endforeach
+                </div>
+
+                {{-- Add criteria form (edit mode only) --}}
+                @if($canBuild)
+                <div x-show="editMode" class="px-5 pb-5 pt-3 border-t border-dashed border-slate-200 mt-2">
+                    <div x-data="{ show: false, name: '', desc: '' }">
+                        <button type="button" @click="show=!show"
+                                class="inline-flex items-center gap-2 text-xs font-semibold text-teal-600 hover:text-teal-800 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            Agregar criterio
+                        </button>
+                        <div x-show="show" x-transition class="mt-3 flex flex-col sm:flex-row gap-2">
+                            <input type="text" x-model="name" placeholder="Nombre del criterio *"
+                                   class="flex-1 px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                            <input type="text" x-model="desc" placeholder="Descripción (opcional)"
+                                   class="flex-1 px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                            <button type="button"
+                                    @click="if(name.trim()){$dispatch('add-criteria',{sectionId:{{ $section->id }},name,desc});name='';desc='';show=false}"
+                                    class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold rounded-xl transition-colors whitespace-nowrap">
+                                Agregar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                @endif
+
+                @endif {{-- end rango/regular fork --}}
+            </div>
+        </div>
+        @endforeach
+    </div>
+
+    {{-- ── FALLBACK SAVE BUTTON ── --}}
+    @if(!$isReadOnly)
+    <form id="save-form" method="POST" action="{{ route('evaluations.save-responses', $evaluation) }}">
+        @csrf
+        <div id="hidden-scores-container"></div>
+        <div class="flex justify-end">
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-6 py-3 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-2xl transition-all shadow-md shadow-teal-500/20 text-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                Guardar todas las calificaciones
+            </button>
+        </div>
+    </form>
+    @endif
+
+    {{-- ── OBSERVATIONS (jefe/admin) ── --}}
+    @if($isEvaluator)
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-4 bg-gradient-to-r from-slate-50 to-transparent border-b border-slate-200">
+            <h2 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                <span class="w-6 h-6 rounded-lg bg-slate-700 text-white flex items-center justify-center text-xs">📝</span>
+                Observaciones <span class="text-xs font-normal text-slate-400">(solo visible para jefe y RRHH)</span>
+            </h2>
+        </div>
+        <form method="POST" action="{{ route('evaluations.save-observations', $evaluation) }}" class="p-5 space-y-4">
+            @csrf
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                @foreach(['obs_organizacional'=>'Organizacionales','obs_cargo'=>'Del Cargo','obs_responsabilidades'=>'Responsabilidades'] as $field => $label)
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">{{ $label }}</label>
+                    <textarea name="{{ $field }}" rows="4" {{ $isReadOnly?'readonly':'' }}
+                              class="w-full border border-slate-200 rounded-xl text-sm px-3 py-2 focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none {{ $isReadOnly?'bg-slate-50 text-slate-500':'' }}"
+                              placeholder="Observaciones sobre {{ strtolower($label) }}…">{{ $evaluation->$field }}</textarea>
+                </div>
+                @endforeach
+            </div>
+            @if(!$isReadOnly)
+            <div class="flex justify-end">
+                <button type="submit" class="px-5 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold rounded-xl transition-colors">
+                    Guardar observaciones
+                </button>
+            </div>
+            @endif
+        </form>
+    </div>
+    @endif
+
+    {{-- ── SCORE SUMMARY ── --}}
+    @if($evaluation->final_score || $evaluation->total_auto_score)
+    @php
+        $finalScore = (float)$evaluation->final_score;
+        $interp = $evaluation->final_score ? $evaluation->getInterpretation() : null;
+    @endphp
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+        <h2 class="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">
+            <span class="w-6 h-6 rounded-lg bg-teal-600 text-white flex items-center justify-center text-xs">📊</span>
+            Resumen de puntajes
+        </h2>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+            <div class="text-center p-4 bg-teal-50 rounded-2xl border border-teal-100">
+                <p class="text-xs font-bold text-teal-500 uppercase tracking-wider">Total Autoevaluación</p>
+                <p class="text-4xl font-black text-teal-700 mt-1">{{ number_format((float)$evaluation->total_auto_score,1) }}</p>
+            </div>
+            @if($isEvaluator)
+            <div class="text-center p-4 bg-cyan-50 rounded-2xl border border-cyan-100">
+                <p class="text-xs font-bold text-cyan-500 uppercase tracking-wider">Total Jefe</p>
+                <p class="text-4xl font-black text-cyan-700 mt-1">{{ number_format((float)$evaluation->total_evaluator_score,1) }}</p>
+            </div>
+            @endif
+            <div class="text-center p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+                <p class="text-xs font-bold text-emerald-500 uppercase tracking-wider">Puntaje Final</p>
+                <p class="text-4xl font-black text-emerald-700 mt-1">{{ $evaluation->final_score ? number_format($finalScore,1) : '—' }}</p>
+            </div>
+        </div>
+        @if($interp)
+        @php $ic = ['green'=>'bg-emerald-100 text-emerald-800 border-emerald-200','blue'=>'bg-blue-100 text-blue-800 border-blue-200','yellow'=>'bg-amber-100 text-amber-800 border-amber-200','red'=>'bg-rose-100 text-rose-800 border-rose-200']; @endphp
+        <div class="p-4 rounded-2xl border {{ $ic[$interp['color']] }} text-center">
+            <p class="text-sm font-semibold mb-1">Resultado final</p>
+            <p class="text-2xl font-black">{{ $interp['label'] }}</p>
+            <p class="text-sm mt-1 opacity-75">Puntaje: {{ number_format($finalScore,1) }} pts</p>
+        </div>
+        @endif
+    </div>
+    @endif
+
+    {{-- ── DEVELOPMENT PLAN ── --}}
+    @if($isEvaluator)
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-4 bg-gradient-to-r from-teal-50 to-transparent border-b border-teal-200">
+            <h2 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                <span class="w-6 h-6 rounded-lg bg-teal-600 text-white flex items-center justify-center text-xs">🚀</span>
+                Plan de Desarrollo
+            </h2>
+        </div>
+
+        @if($evaluation->developmentPlans->count())
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="bg-slate-50 border-b border-slate-100">
+                        <th class="px-4 py-3 text-left font-semibold text-slate-600">Competencia</th>
+                        <th class="px-4 py-3 text-left font-semibold text-slate-600">Actividad</th>
+                        <th class="px-4 py-3 text-left font-semibold text-slate-600">Responsable</th>
+                        <th class="px-4 py-3 text-left font-semibold text-slate-600">Seguimiento</th>
+                        <th class="px-4 py-3 text-left font-semibold text-slate-600">Notas</th>
+                        @if(!$isReadOnly)<th class="px-4 py-3"></th>@endif
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-50">
+                    @foreach($evaluation->developmentPlans as $plan)
+                    <tr class="hover:bg-slate-50/50 transition-colors">
+                        <td class="px-4 py-3 font-medium text-slate-800">{{ $plan->competencia }}</td>
+                        <td class="px-4 py-3 text-slate-700">{{ $plan->actividad }}</td>
+                        <td class="px-4 py-3 text-slate-600">{{ $plan->responsable }}</td>
+                        <td class="px-4 py-3 text-slate-500">{{ $plan->fecha_seguimiento?->format('d/m/Y') ?? '—' }}</td>
+                        <td class="px-4 py-3 text-xs text-slate-400">{{ $plan->observaciones ?? '—' }}</td>
+                        @if(!$isReadOnly)
+                        <td class="px-4 py-3">
+                            <form method="POST" action="{{ route('development-plans.destroy',$plan) }}" class="inline" onsubmit="return confirm('¿Eliminar?')">
+                                @csrf @method('DELETE')
+                                <button class="text-xs text-rose-500 hover:text-rose-700 font-medium">Eliminar</button>
+                            </form>
+                        </td>
+                        @endif
+                    </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+        @else
+        <p class="px-5 py-4 text-sm text-slate-400 italic">Sin ítems en el plan de desarrollo.</p>
+        @endif
+
+        @if(!$isReadOnly)
+        <form method="POST" action="{{ route('development-plans.store', $evaluation) }}" class="p-5 border-t border-slate-100">
+            @csrf
+            <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Agregar ítem</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
+                <input type="text" name="competencia" required placeholder="Competencia a mejorar *" class="px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                <input type="text" name="actividad" required placeholder="Actividad de mejora *" class="px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                <input type="text" name="responsable" required placeholder="Responsable *" class="px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                <input type="date" name="fecha_seguimiento" class="px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                <input type="text" name="observaciones" placeholder="Observaciones" class="sm:col-span-2 px-3 py-2 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+            </div>
+            <div class="flex justify-end">
+                <button type="submit" class="px-5 py-2 bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold rounded-xl transition-colors">+ Agregar ítem</button>
+            </div>
+        </form>
+        @endif
+    </div>
+    @endif
+
+</div>
+
+@endsection
+
+@push('scripts')
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.3/Sortable.min.js" integrity="sha512-AeqHfHHnase2OHMFoVoT5DeRiP4vDMFAtxOY7K9JLTt4S+T1PZYX1gcUwSbMhAiUGmVJBR5L1B3d2gxlS1kA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script>
+window.evalData = @json($evalDataPayload);
+function evalBuilder() {
+    const d = window.evalData;
+
+    return {
+        editMode: false,
+        saveState: 'idle', // idle | saving | saved
+        scores: { ...d.scores },
+        totals: { ...d.totals },
+        completedCount: 0,
+        totalCount: 0,
+        progress: 0,
+        openSections: {},
+        sectionsActive: {},
+        addSectionForm: { show: false, type: '', typeLabel: '', name: '' },
+        sortable: null,
+
+        init() {
+            // Open all sections by default
+            document.querySelectorAll('[data-section-id]').forEach(el => {
+                const id = parseInt(el.dataset.sectionId);
+                this.openSections[id] = true;
+                this.sectionsActive[id] = !el.classList.contains('inactive');
+            });
+
+            // Set sectionsActive from server
+            @foreach($evaluation->template?->sections ?? [] as $s)
+            this.sectionsActive[{{ $s->id }}] = {{ $s->is_active ? 'true' : 'false' }};
+            @endforeach
+
+            this.recalcProgress();
+
+            // Listen for add-criteria events from inner x-data scopes
+            window.addEventListener('add-criteria', e => this.addCriteria(e.detail.sectionId, e.detail.name, e.detail.desc));
+        },
+
+        // ── Score functions ──
+        scoreActiveClass(v) {
+            const map = {1:'bg-rose-500 text-white shadow-rose-200',2:'bg-orange-500 text-white shadow-orange-200',3:'bg-amber-400 text-white shadow-amber-200',4:'bg-blue-500 text-white shadow-blue-200',5:'bg-emerald-500 text-white shadow-emerald-200'};
+            return (map[v] || 'bg-slate-500 text-white') + ' shadow-md scale-110';
+        },
+
+        setScore(criteriaId, role, value) {
+            if (d.isReadOnly) return;
+            if (!this.scores[criteriaId]) this.scores[criteriaId] = { auto: null, evaluator: null, comment: '' };
+
+            // Toggle off if same value clicked
+            const prev = this.scores[criteriaId][role];
+            this.scores[criteriaId][role] = prev === value ? null : value;
+
+            // Update hidden inputs for form fallback
+            const hiddenId = role === 'auto' ? `auto-${criteriaId}` : `eval-${criteriaId}`;
+            const hiddenEl = document.getElementById(hiddenId);
+            if (hiddenEl) hiddenEl.value = this.scores[criteriaId][role] ?? '';
+
+            this.recalcProgress();
+            this.autosave(criteriaId, role);
+        },
+
+        async autosave(criteriaId, role) {
+            this.saveState = 'saving';
+            const payload = { _method: undefined };
+            const sc = this.scores[criteriaId] || {};
+            if (role === 'auto') payload.auto_score = sc.auto;
+            else { payload.evaluator_score = sc.evaluator; payload.comment = sc.comment || ''; }
+
+            try {
+                const res = await fetch(`${d.routes.saveScore}/${criteriaId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': d.csrf, 'X-Requested-With': 'XMLHttpRequest' },
+                    body: JSON.stringify(payload),
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    this.totals.auto      = data.total_auto_score ?? this.totals.auto;
+                    this.totals.evaluator = data.total_evaluator_score ?? this.totals.evaluator;
+                    this.totals.final     = data.final_score ?? this.totals.final;
+                    this.saveState = 'saved';
+                    setTimeout(() => { if (this.saveState === 'saved') this.saveState = 'idle'; }, 2000);
+                } else {
+                    this.saveState = 'idle';
+                }
+            } catch {
+                this.saveState = 'idle';
+            }
+        },
+
+        recalcProgress() {
+            let done = 0, total = 0;
+            const role = d.isEmployee ? 'auto' : 'evaluator';
+            for (const [id, sc] of Object.entries(this.scores)) {
+                total++;
+                if (sc[role] !== null && sc[role] !== undefined) done++;
+            }
+            this.completedCount = done;
+            this.totalCount = total;
+            this.progress = total > 0 ? Math.round(done / total * 100) : 0;
+        },
+
+        // ── Edit mode / Sortable ──
+        initSortable() {
+            const container = document.getElementById('sections-container');
+            if (!container || this.sortable) return;
+            this.sortable = Sortable.create(container, {
+                handle: '.drag-handle',
+                animation: 200,
+                ghostClass: 'opacity-30',
+                dragClass: 'shadow-2xl rotate-1',
+                onEnd: () => this.persistOrder(),
+            });
+        },
+
+        toggleEditMode() {
+            this.editMode = !this.editMode;
+            if (this.editMode) {
+                this.$nextTick(() => this.initSortable());
+            } else if (this.sortable) {
+                this.sortable.destroy();
+                this.sortable = null;
+            }
+        },
+
+        persistOrder() {
+            const ids = [...document.querySelectorAll('#sections-container [data-section-id]')].map(el => parseInt(el.dataset.sectionId));
+            fetch(d.routes.reorder, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': d.csrf, 'X-Requested-With': 'XMLHttpRequest' },
+                body: JSON.stringify({ order: ids }),
+            });
+        },
+
+        // ── Section toggle ──
+        async toggleSection(sectionId) {
+            const res = await fetch(`${d.routes.toggle}/${sectionId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': d.csrf },
+                body: JSON.stringify({}),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                this.sectionsActive[sectionId] = data.is_active;
+            }
+        },
+
+        // ── Add section ──
+        promptAddSection(type) {
+            const labels = { competencias_org: '🧠 Comp. Organizacionales', competencias_cargo: '💼 Comp. del Cargo', responsabilidades: '✅ Responsabilidades', rango: '📊 Tabla de Rangos' };
+            this.addSectionForm = { show: true, type, typeLabel: labels[type] || type, name: '' };
+        },
+
+        async submitAddSection() {
+            if (!this.addSectionForm.name.trim()) return;
+            const res = await fetch(d.routes.addSection, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': d.csrf },
+                body: JSON.stringify({ name: this.addSectionForm.name, type: this.addSectionForm.type }),
+            });
+            if (res.ok) {
+                this.addSectionForm.show = false;
+                // Reload page to show new section
+                window.location.reload();
+            }
+        },
+
+        // ── Add criteria ──
+        async addCriteria(sectionId, name, desc) {
+            const res = await fetch(`${d.routes.addCriteria}/${sectionId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': d.csrf },
+                body: JSON.stringify({ name, description: desc }),
+            });
+            if (res.ok) {
+                window.location.reload();
+            }
+        },
+
+        // ── Remove criteria ──
+        async removeCriteria(criteriaId, sectionId) {
+            if (!confirm('¿Quitar este criterio de la evaluación?')) return;
+            const res = await fetch(`${d.routes.rmCriteria}/${criteriaId}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': d.csrf },
+            });
+            if (res.ok) {
+                const row = document.getElementById(`row-${criteriaId}`);
+                if (row) {
+                    row.style.transition = 'all 0.3s ease';
+                    row.style.opacity = '0';
+                    row.style.maxHeight = row.offsetHeight + 'px';
+                    setTimeout(() => { row.style.maxHeight = '0'; row.style.padding = '0'; }, 50);
+                    setTimeout(() => row.remove(), 350);
+                }
+                delete this.scores[criteriaId];
+                this.recalcProgress();
+            }
+        },
+    };
+}
+</script>
+@endpush

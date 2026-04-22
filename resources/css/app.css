@@ -1,0 +1,36 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+
+@theme {
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+
+    /* Brand palette: light blue + white */
+    --color-teal-50: oklch(99% 0.01 240);
+    --color-teal-100: oklch(97% 0.02 240);
+    --color-teal-200: oklch(93% 0.05 241);
+    --color-teal-300: oklch(88% 0.08 243);
+    --color-teal-400: oklch(80% 0.11 246);
+    --color-teal-500: oklch(72% 0.13 250);
+    --color-teal-600: oklch(64% 0.14 253);
+    --color-teal-700: oklch(56% 0.13 256);
+    --color-teal-800: oklch(47% 0.10 257);
+    --color-teal-900: oklch(38% 0.07 258);
+    --color-teal-950: oklch(29% 0.05 260);
+
+    --color-cyan-50: oklch(99% 0.01 245);
+    --color-cyan-100: oklch(97% 0.02 245);
+    --color-cyan-200: oklch(94% 0.05 247);
+    --color-cyan-300: oklch(89% 0.08 250);
+    --color-cyan-400: oklch(83% 0.11 253);
+    --color-cyan-500: oklch(75% 0.13 256);
+    --color-cyan-600: oklch(67% 0.14 258);
+    --color-cyan-700: oklch(59% 0.12 260);
+    --color-cyan-800: oklch(49% 0.09 261);
+    --color-cyan-900: oklch(39% 0.07 262);
+    --color-cyan-950: oklch(30% 0.05 264);
+}
