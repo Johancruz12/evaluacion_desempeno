@@ -47,7 +47,18 @@
         </div>
         @endif
 
-        <form method="POST" action="{{ route('password.update') }}" class="space-y-4">
+        <form method="POST" action="{{ route('password.update') }}" class="space-y-4"
+              x-data="{
+                  pwd: '',
+                  confirm: '',
+                  get hasLower()   { return /[a-z]/.test(this.pwd); },
+                  get hasUpper()   { return /[A-Z]/.test(this.pwd); },
+                  get hasNumber()  { return /[0-9]/.test(this.pwd); },
+                  get hasSpecial() { return /[^A-Za-z0-9]/.test(this.pwd); },
+                  get hasLength()  { return this.pwd.length >= 8; },
+                  get match()      { return this.confirm.length > 0 && this.pwd === this.confirm; },
+                  get allOk()      { return this.hasLower && this.hasUpper && this.hasNumber && this.hasSpecial && this.hasLength && this.match; }
+              }">
             @csrf
             <div>
                 <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Contraseña actual</label>
@@ -57,18 +68,40 @@
             </div>
             <div>
                 <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Nueva contraseña</label>
-                <input type="password" name="password" required
+                <input type="password" name="password" required x-model="pwd"
                        class="w-full px-3 py-3 rounded-xl border border-blue-200 bg-white text-slate-800 text-sm focus:outline-none"
-                       placeholder="Mínimo 6 caracteres">
+                       placeholder="Mínimo 8 caracteres">
             </div>
             <div>
                 <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Confirmar contraseña</label>
-                <input type="password" name="password_confirmation" required
+                <input type="password" name="password_confirmation" required x-model="confirm"
                        class="w-full px-3 py-3 rounded-xl border border-blue-200 bg-white text-slate-800 text-sm focus:outline-none"
                        placeholder="Repite la nueva contraseña">
             </div>
 
-            <button type="submit" class="w-full rounded-xl bg-blue-500 hover:bg-blue-400 text-white font-semibold py-3.5 mt-2 transition-colors">
+            {{-- Requisitos en vivo --}}
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1.5" x-show="pwd.length > 0" x-cloak>
+                <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Requisitos</p>
+                <template x-for="(r, i) in [
+                    { ok: hasLength,  label: 'Mínimo 8 caracteres' },
+                    { ok: hasLower,   label: 'Al menos una letra minúscula' },
+                    { ok: hasUpper,   label: 'Al menos una letra mayúscula' },
+                    { ok: hasNumber,  label: 'Al menos un número' },
+                    { ok: hasSpecial, label: 'Al menos un carácter especial (!@#$…)' },
+                    { ok: match,      label: 'La confirmación coincide' },
+                ]" :key="i">
+                    <div class="flex items-center gap-2 text-xs" :class="r.ok ? 'text-emerald-600' : 'text-slate-500'">
+                        <svg x-show="r.ok" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                        <svg x-show="!r.ok" class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-width="2"/></svg>
+                        <span x-text="r.label"></span>
+                    </div>
+                </template>
+            </div>
+
+            <button type="submit"
+                    :disabled="!allOk"
+                    :class="allOk ? 'bg-blue-500 hover:bg-blue-400 cursor-pointer' : 'bg-slate-300 cursor-not-allowed'"
+                    class="w-full rounded-xl text-white font-semibold py-3.5 mt-2 transition-colors">
                 Guardar nueva contraseña
             </button>
         </form>

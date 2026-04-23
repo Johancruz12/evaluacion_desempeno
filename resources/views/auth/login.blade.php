@@ -422,6 +422,13 @@
                 </div>
                 @endif
 
+                {{-- Status (mensaje tras recuperar contraseña) --}}
+                @if(session('status'))
+                <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:.75rem 1rem;margin-bottom:1rem;color:#065f46;font-size:.78rem;line-height:1.4">
+                    {{ session('status') }}
+                </div>
+                @endif
+
                 {{-- Form --}}
                 <form method="POST" action="{{ route('login') }}">
                     @csrf
@@ -457,6 +464,13 @@
                         Ingresar
                     </button>
                 </form>
+
+                <div style="margin-top:1rem;text-align:center">
+                    <a href="{{ route('password.forgot') }}"
+                       style="font-size:.78rem;font-weight:600;color:#2563eb;text-decoration:none">
+                        ¿Olvidaste tu contraseña?
+                    </a>
+                </div>
             </div>
 
             {{-- Footer --}}

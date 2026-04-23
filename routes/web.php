@@ -20,6 +20,10 @@ Route::redirect('/', '/login');
 Route::middleware('guest')->group(function () {
     Route::get('/login',  [AuthController::class, 'showLogin'])->name('login');
     Route::post('/login', [AuthController::class, 'login']);
+
+    // "Olvidé mi contraseña" — valida cédula contra Salomón y resetea password = cédula
+    Route::get('/password/forgot',  [AuthController::class, 'showForgotPassword'])->name('password.forgot');
+    Route::post('/password/forgot', [AuthController::class, 'forgotPassword'])->name('password.forgot.submit');
 });
 
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth')->name('logout');

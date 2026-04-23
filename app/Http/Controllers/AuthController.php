@@ -76,7 +76,20 @@ class AuthController extends Controller
     {
         $request->validate([
             'current_password' => ['required'],
-            'password' => ['required', 'string', 'min:6', 'confirmed'],
+            'password' => [
+                'required',
+                'string',
+                'min:8',
+                'confirmed',
+                'regex:/[a-z]/',        // al menos una minúscula
+                'regex:/[A-Z]/',        // al menos una mayúscula
+                'regex:/[0-9]/',        // al menos un número
+                'regex:/[^A-Za-z0-9]/', // al menos un carácter especial
+            ],
+        ], [
+            'password.min'       => 'La contraseña debe tener al menos 8 caracteres.',
+            'password.confirmed' => 'La confirmación de la contraseña no coincide.',
+            'password.regex'     => 'La contraseña debe incluir al menos una letra minúscula, una mayúscula, un número y un carácter especial.',
         ]);
 
         $user = $request->user();
@@ -85,12 +98,92 @@ class AuthController extends Controller
             return back()->withErrors(['current_password' => 'La contraseña actual no es correcta.']);
         }
 
+        // Evitar que el usuario reutilice su cédula como nueva contraseña
+        if ($request->password === $user->login) {
+            return back()->withErrors([
+                'password' => 'La nueva contraseña no puede ser igual a tu número de cédula.',
+            ]);
+        }
+
         $user->update([
             'password' => $request->password,
             'must_change_password' => false,
         ]);
 
         return redirect('/dashboard')->with('success', 'Contraseña actualizada correctamente. Tu cuenta está segura.');
+    }
+
+    /**
+     * Mostrar formulario de "olvidé mi contraseña".
+     * El usuario ingresa su cédula; si existe en Salomón (o ya en BD local)
+     * le reseteamos la contraseña a su cédula y lo forzamos a cambiarla al entrar.
+     */
+    public function showForgotPassword()
+    {
+        return view('auth.forgot-password');
+    }
+
+    public function forgotPassword(Request $request)
+    {
+        $request->validate([
+            'login' => ['required', 'string'],
+        ]);
+
+        $cedula = trim($request->input('login'));
+
+        // 1) Buscar usuario local
+        $user = User::where('login', $cedula)->first();
+
+        // 2) Si no hay usuario local, validar que exista en Salomón antes de crear
+        if (!$user) {
+            try {
+                $salomon = new SalomonService();
+                $employee = $salomon->findEmployeeByCedula($cedula);
+
+                if (!$employee) {
+                    return back()->withErrors([
+                        'login' => 'No encontramos tu cédula en el sistema. Contacta a Recursos Humanos.',
+                    ])->onlyInput('login');
+                }
+
+                // Auto-registrar desde Salomón con cédula como contraseña inicial
+                $user = $this->registerFromSalomon($employee, $cedula);
+
+                return redirect()->route('login')->with('status',
+                    'Tu usuario fue creado. Ingresa con tu cédula como usuario y contraseña, y luego podrás cambiarla.');
+            } catch (\Throwable $e) {
+                Log::warning('Salomón connection failed during password reset', ['error' => $e->getMessage()]);
+                return back()->withErrors([
+                    'login' => 'No fue posible validar tu cédula en este momento. Intenta más tarde o contacta al administrador.',
+                ])->onlyInput('login');
+            }
+        }
+
+        // 3) Usuario local encontrado: validar que también siga existiendo en Salomón
+        //    (política de seguridad: solo empleados vigentes pueden recuperar contraseña)
+        try {
+            $salomon = new SalomonService();
+            $employee = $salomon->findEmployeeByCedula($cedula);
+
+            if (!$employee) {
+                return back()->withErrors([
+                    'login' => 'Tu cédula no está activa en Salomón. Contacta a Recursos Humanos.',
+                ])->onlyInput('login');
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Salomón connection failed during password reset', ['error' => $e->getMessage()]);
+            // No bloqueamos si Salomón está caído: permitimos el reset igualmente, para no dejar a nadie afuera.
+        }
+
+        // 4) Reset: password = cédula, forzar cambio al próximo login
+        $user->update([
+            'password'             => $cedula,       // cast 'hashed' encripta automáticamente
+            'must_change_password' => true,
+            'is_active'            => true,
+        ]);
+
+        return redirect()->route('login')->with('status',
+            'Tu contraseña fue restablecida a tu número de cédula. Ingresa con ella y el sistema te pedirá una nueva.');
     }
 
     public function logout(Request $request)
