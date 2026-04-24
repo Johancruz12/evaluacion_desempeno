@@ -21,8 +21,10 @@ class UserController extends Controller
      * ────────────────────────────────── */
     public function index()
     {
+        // Incluimos activos e inactivos para que el admin pueda reactivarlos.
+        // El orden coloca activos primero dentro de cada área.
         $grouped = User::with(['person', 'roles', 'area', 'positionType'])
-            ->where('is_active', true)
+            ->orderByDesc('is_active')
             ->get()
             ->groupBy(fn ($u) => $u->area_id ?? 0);
 
@@ -237,13 +239,20 @@ class UserController extends Controller
         $superUserIds   = $processedUsers->whereIn('login', $superUserLogins)->pluck('id')->toArray();
         $jefeUserIds    = $processedUsers->whereIn('login', $jefeLogins)->pluck('id')->toArray();
 
-        DB::transaction(function () use ($processedIds, $superUserIds, $jefeUserIds, $empleadoRole, $directorRhRole, $jefeAreaRole) {
+        // Protección: el Super Administrador (cédula configurada) SIEMPRE conserva director_rh
+        // aunque el Excel lo liste como empleado normal.
+        $superAdminCedula = config('auth.super_admin_cedula');
+        $superAdminId = $superAdminCedula
+            ? $processedUsers->firstWhere('login', $superAdminCedula)?->id
+            : null;
+
+        DB::transaction(function () use ($processedIds, $superUserIds, $jefeUserIds, $superAdminId, $empleadoRole, $directorRhRole, $jefeAreaRole) {
             DB::table('user_has_roles')->whereIn('user_id', $processedIds)->delete();
 
             $roleRows = [];
             foreach ($processedIds as $uid) {
                 $roleRows[] = ['user_id' => $uid, 'role_id' => $empleadoRole->id];
-                if (in_array($uid, $superUserIds)) {
+                if (in_array($uid, $superUserIds) || $uid === $superAdminId) {
                     $roleRows[] = ['user_id' => $uid, 'role_id' => $directorRhRole->id];
                 }
                 if (in_array($uid, $jefeUserIds)) {
@@ -256,12 +265,18 @@ class UserController extends Controller
         });
 
         // ═══ PHASE 6 — Deactivate employees NOT in file ═══
+        // Nunca desactivamos al Super Administrador aunque no aparezca en el Excel.
         $deactivated = 0;
         if (!empty($processedIds)) {
-            $deactivated = User::where('is_active', true)
+            $query = User::where('is_active', true)
                 ->whereNotIn('id', $processedIds)
-                ->whereHas('roles', fn ($q) => $q->whereIn('slug', ['empleado']))
-                ->update(['is_active' => false]);
+                ->whereHas('roles', fn ($q) => $q->whereIn('slug', ['empleado']));
+
+            if ($superAdminCedula) {
+                $query->where('login', '!=', $superAdminCedula);
+            }
+
+            $deactivated = $query->update(['is_active' => false]);
         }
 
         cache(['employees_last_import' => now()->format('d/m/Y H:i')], now()->addYear());
@@ -276,6 +291,34 @@ class UserController extends Controller
         ];
 
         return response()->json(['success' => true, 'stats' => $stats]);
+    }
+
+    /* ──────────────────────────────────
+     *  TOGGLE ACTIVE — activar/inactivar usuario
+     *  No se elimina nunca: se preserva la integridad referencial
+     *  (evaluaciones, respuestas, planes, etc.).
+     * ────────────────────────────────── */
+    public function toggleActive(Request $request, User $user)
+    {
+        // Un admin no puede inactivarse a sí mismo
+        if ($user->id === $request->user()->id) {
+            return back()->with('error', 'No puedes inactivar tu propia cuenta.');
+        }
+
+        $user->is_active = ! $user->is_active;
+        $user->save();
+
+        // Si se inactiva, cerrar sus sesiones activas para sacarlo del sistema
+        if (! $user->is_active) {
+            DB::table('sessions')->where('user_id', $user->id)->delete();
+        }
+
+        $nombre = trim(($user->person?->first_name ?? '') . ' ' . ($user->person?->last_name ?? '')) ?: $user->login;
+        $msg = $user->is_active
+            ? "Usuario {$nombre} activado correctamente."
+            : "Usuario {$nombre} inactivado. Ya no podrá ingresar al sistema.";
+
+        return back()->with('success', $msg);
     }
 
     /* ──────────────────────────────────

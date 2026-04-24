@@ -73,6 +73,17 @@ class User extends Authenticatable
         return $this->roles()->where('slug', 'director_rh')->exists();
     }
 
+    /**
+     * Super Administrador: único usuario autorizado a gestionar
+     * roles y permisos del sistema. Se define por cédula en config/auth.php
+     * (o por variable de entorno SUPER_ADMIN_CEDULA).
+     */
+    public function isSuperAdmin(): bool
+    {
+        $cedula = config('auth.super_admin_cedula', env('SUPER_ADMIN_CEDULA', '1070588425'));
+        return $this->login === $cedula;
+    }
+
     public function isJefeArea(): bool
     {
         return $this->roles()->where('slug', 'jefe_area')->exists();

@@ -221,7 +221,7 @@
              class="mt-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden divide-y divide-slate-100">
 
             @foreach($users as $user)
-            <div class="row-hover px-5 py-3 flex items-center gap-4 employee-row"
+            <div class="row-hover px-5 py-3 flex items-center gap-4 employee-row {{ $user->is_active ? '' : 'bg-slate-50/70 opacity-75' }}"
                  data-search="{{ Str::lower(($user->person?->first_name ?? '') . ' ' . ($user->person?->last_name ?? '') . ' ' . ($user->person?->document_number ?? '') . ' ' . ($user->positionType?->name ?? '')) }}">
                 <div class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0
                     {{ $user->roles->contains('slug', 'director_rh') ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300' : 'bg-slate-100 text-slate-500' }}">
@@ -247,9 +247,34 @@
                     </div>
                 </div>
 
-                <div class="flex items-center gap-1.5">
-                    <span class="w-2 h-2 rounded-full {{ $user->is_active ? 'bg-emerald-400' : 'bg-slate-300' }}"></span>
-                    <span class="text-xs {{ $user->is_active ? 'text-emerald-600' : 'text-slate-400' }}">{{ $user->is_active ? 'Activo' : 'Inactivo' }}</span>
+                <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full {{ $user->is_active ? 'bg-emerald-400' : 'bg-slate-300' }}"></span>
+                        <span class="text-xs {{ $user->is_active ? 'text-emerald-600' : 'text-slate-400' }}">{{ $user->is_active ? 'Activo' : 'Inactivo' }}</span>
+                    </div>
+
+                    @if($user->id !== auth()->id())
+                    <form method="POST" action="{{ route('admin.employees.toggle-active', $user) }}"
+                          onsubmit="return confirm('{{ $user->is_active ? '¿Inactivar a ' . addslashes(($user->person?->first_name ?? '') . ' ' . ($user->person?->last_name ?? '')) . '? No podrá ingresar al sistema.' : '¿Activar a ' . addslashes(($user->person?->first_name ?? '') . ' ' . ($user->person?->last_name ?? '')) . '?' }}');">
+                        @csrf
+                        @method('PATCH')
+                        @if($user->is_active)
+                        <button type="submit" title="Inactivar usuario"
+                                class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition-all">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                            Inactivar
+                        </button>
+                        @else
+                        <button type="submit" title="Activar usuario"
+                                class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-200 transition-all">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            Activar
+                        </button>
+                        @endif
+                    </form>
+                    @else
+                    <span class="text-[10px] text-slate-400 italic px-2">(tu cuenta)</span>
+                    @endif
                 </div>
             </div>
             @endforeach

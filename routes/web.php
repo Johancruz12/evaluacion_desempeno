@@ -11,6 +11,7 @@ use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\Admin\AreaController;
 use App\Http\Controllers\Admin\EvaluationTemplateController;
 use App\Http\Controllers\Admin\PositionTypeController;
+use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\SettingController;
 use Illuminate\Support\Facades\Route;
@@ -121,11 +122,26 @@ Route::middleware('auth')->group(function () {
 
         Route::get('/employees',                       [UserController::class, 'index'])->name('employees.index');
         Route::post('/employees/import',               [UserController::class, 'importEmployees'])->name('employees.import');
+        Route::patch('/employees/{user}/toggle-active',[UserController::class, 'toggleActive'])->name('employees.toggle-active');
         Route::get('/api/areas/{area}/position-types', [UserController::class, 'getPositionTypes'])->name('api.position-types');
 
         Route::get('/settings',  [SettingController::class, 'index'])->name('settings.index');
         Route::post('/settings', [SettingController::class, 'update'])->name('settings.update');
 
 
+    });
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  ROLES Y PERMISOS — solo para el Super Administrador (cédula 1070588425)
+    // ═══════════════════════════════════════════════════════════════════
+    Route::middleware('superadmin')->prefix('admin')->name('admin.')->group(function () {
+        Route::get('/roles',              [RoleController::class, 'index'])->name('roles.index');
+        Route::get('/roles/create',       [RoleController::class, 'create'])->name('roles.create');
+        Route::post('/roles',             [RoleController::class, 'store'])->name('roles.store');
+        Route::get('/roles/{role}/edit',  [RoleController::class, 'edit'])->name('roles.edit');
+        Route::put('/roles/{role}',       [RoleController::class, 'update'])->name('roles.update');
+        Route::delete('/roles/{role}',    [RoleController::class, 'destroy'])->name('roles.destroy');
+        Route::post('/roles/{role}/users',         [RoleController::class, 'attachUser'])->name('roles.users.attach');
+        Route::delete('/roles/{role}/users/{user}',[RoleController::class, 'detachUser'])->name('roles.users.detach');
     });
 });

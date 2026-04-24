@@ -6,6 +6,16 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Super Administrador
+    |--------------------------------------------------------------------------
+    | Cédula del único usuario con permisos para gestionar roles y permisos
+    | del sistema. Puede sobreescribirse con la variable de entorno
+    | SUPER_ADMIN_CEDULA.
+    */
+    'super_admin_cedula' => env('SUPER_ADMIN_CEDULA', '1070588425'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Authentication Defaults
     |--------------------------------------------------------------------------
     |

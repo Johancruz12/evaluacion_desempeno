@@ -40,7 +40,7 @@ class EnsureAdminUser extends Command
         }
 
         DB::transaction(function () use ($cedula, $firstName, $lastName) {
-            // 1) Rol Administrador (slug interno = director_rh, se mantiene por compatibilidad)
+            // 1) Roles del sistema (los 3 son requeridos por el código)
             $role = Role::firstOrCreate(
                 ['slug' => 'director_rh'],
                 ['description' => 'Administrador']
@@ -49,6 +49,15 @@ class EnsureAdminUser extends Command
             if ($role->description !== 'Administrador') {
                 $role->update(['description' => 'Administrador']);
             }
+
+            Role::firstOrCreate(
+                ['slug' => 'jefe_area'],
+                ['description' => 'Jefe de Área']
+            );
+            Role::firstOrCreate(
+                ['slug' => 'empleado'],
+                ['description' => 'Empleado']
+            );
 
             // 2) Persona
             $person = Person::firstOrCreate(
