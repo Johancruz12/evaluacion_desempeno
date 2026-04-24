@@ -73,28 +73,9 @@ class DatabaseSeeder extends Seeder
         $puestoAnalistaRH = PositionType::create(['name' => 'Analista de R.H.',         'area_id' => $areaRH->id,     'is_active' => true]);
 
         // ── Personas y Usuarios ──
-
-        // ⭐ ADMIN PRINCIPAL — Cédula Salomón (login = cédula, password = cédula)
-        $personAdmin = Person::create([
-            'document_number' => '1070588425',
-            'document_type'   => 'CC',
-            'first_name'      => 'Administrador',
-            'last_name'       => 'Salomón',
-            'email'           => 'admin.salomon@empresa.com',
-            'phone'           => '3000000000',
-            'city_id'         => $bogota->id,
-        ]);
-        $userAdmin = User::create([
-            'login'                => '1070588425',
-            'password'             => '1070588425', // cast 'hashed' encripta automáticamente
-            'person_id'            => $personAdmin->id,
-            'area_id'              => $areaRH->id,
-            'position_type_id'     => $puestoAnalistaRH->id,
-            'employee_code'        => 'ADM-001',
-            'is_active'            => true,
-            'must_change_password' => true,
-        ]);
-        $userAdmin->roles()->attach($directorRh->id);
+        // NOTA: El usuario Administrador (cédula 1070588425) NO se crea aquí.
+        // Se crea/repara desde base de datos usando: php artisan admin:ensure
+        // El login valida contra Salomón (SQL Server) si el usuario no existe localmente.
 
         $personDirector = Person::create(['document_number' => '1001001001', 'document_type' => 'CC', 'first_name' => 'Laura', 'last_name' => 'Martínez', 'email' => 'laura.martinez@empresa.com', 'phone' => '3001234567', 'city_id' => $bogota->id]);
         $userDirector = User::create(['login' => 'director', 'password' => Hash::make('password'), 'person_id' => $personDirector->id, 'area_id' => $areaRH->id, 'position_type_id' => $puestoAnalistaRH->id, 'employee_code' => 'EMP-001']);
