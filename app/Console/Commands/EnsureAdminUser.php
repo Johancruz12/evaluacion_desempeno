@@ -75,6 +75,7 @@ class EnsureAdminUser extends Command
             $user->password             = $cedula; // cast 'hashed' encripta automáticamente
             $user->is_active            = true;
             $user->must_change_password = true;
+            $user->is_super_admin       = true; // marca persistente en BD
             if (!$user->employee_code) {
                 $user->employee_code = 'ADM-' . substr($cedula, -4);
             }

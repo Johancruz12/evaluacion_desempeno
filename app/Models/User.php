@@ -19,7 +19,7 @@ class User extends Authenticatable
     protected $fillable = [
         'login', 'password', 'person_id', 'area_id',
         'position_type_id', 'employee_code', 'is_active',
-        'must_change_password', 'salomon_codigo',
+        'must_change_password', 'is_super_admin', 'salomon_codigo',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -30,6 +30,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_active' => 'boolean',
             'must_change_password' => 'boolean',
+            'is_super_admin' => 'boolean',
         ];
     }
 
@@ -75,13 +76,21 @@ class User extends Authenticatable
 
     /**
      * Super Administrador: único usuario autorizado a gestionar
-     * roles y permisos del sistema. Se define por cédula en config/auth.php
-     * (o por variable de entorno SUPER_ADMIN_CEDULA).
+     * roles y permisos del sistema. La bandera vive en la columna
+     * `users.is_super_admin` (persistida en BD).
+     *
+     * Por compatibilidad, también se acepta un fallback por cédula
+     * configurada en config/auth.php (útil mientras se despliega la
+     * columna nueva en producción).
      */
     public function isSuperAdmin(): bool
     {
-        $cedula = config('auth.super_admin_cedula', env('SUPER_ADMIN_CEDULA', '1070588425'));
-        return $this->login === $cedula;
+        if ((bool) ($this->is_super_admin ?? false)) {
+            return true;
+        }
+
+        $cedula = config('auth.super_admin_cedula');
+        return $cedula && $this->login === $cedula;
     }
 
     public function isJefeArea(): bool
