@@ -209,17 +209,6 @@
             <span>Evaluaciones</span>
         </a>
 
-        @if(auth()->user()->isJefeArea() || auth()->user()->isAdmin())
-        <a href="{{ route('jefe.team') }}"
-           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
-           {{ request()->routeIs('jefe.*') ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-400/30' : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700' }}">
-            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
-            </svg>
-            <span>Mi Equipo</span>
-        </a>
-        @endif
-
         @if(auth()->user()->isAdmin())
         <a href="{{ route('reports.index') }}"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
@@ -232,15 +221,6 @@
 
         <div class="pt-4">
             <p class="text-slate-500 text-[10px] font-bold uppercase tracking-widest px-3 pb-2">Administración</p>
-
-            <a href="{{ route('admin.jefes.overview') }}"
-               class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
-               {{ request()->routeIs('admin.jefes.*') ? 'bg-gradient-to-r from-blue-500 to-sky-500 text-white shadow-lg shadow-blue-400/30' : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700' }}">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
-                </svg>
-                <span>Jefes / Coordinadores</span>
-            </a>
 
             <a href="{{ route('admin.templates.index') }}"
                class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
