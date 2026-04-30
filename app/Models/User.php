@@ -76,21 +76,31 @@ class User extends Authenticatable
 
     /**
      * Super Administrador: único usuario autorizado a gestionar
-     * roles y permisos del sistema. La bandera vive en la columna
-     * `users.is_super_admin` (persistida en BD).
+     * roles y permisos del sistema.
      *
-     * Por compatibilidad, también se acepta un fallback por cédula
-     * configurada en config/auth.php (útil mientras se despliega la
-     * columna nueva en producción).
+     * Orden de verificación (a prueba de despliegues incompletos):
+     *   1) Columna persistida `users.is_super_admin` (si ya existe).
+     *   2) Cédula configurada en config/auth.php (si está disponible).
+     *   3) Fallback duro a la cédula 1070588425 (último recurso para
+     *      ambientes con config:cache viejo o sin la columna nueva).
      */
     public function isSuperAdmin(): bool
     {
-        if ((bool) ($this->is_super_admin ?? false)) {
+        // 1) Columna en BD. Usamos attributes para no romper si la columna
+        //    aún no existe (por ejemplo, antes de correr la migración).
+        if (!empty($this->attributes['is_super_admin'] ?? null)) {
             return true;
         }
 
+        // 2) Config (puede estar cacheada vacía en producción).
         $cedula = config('auth.super_admin_cedula');
-        return $cedula && $this->login === $cedula;
+
+        // 3) Fallback duro (mismo valor por defecto que en config/auth.php).
+        if (empty($cedula)) {
+            $cedula = '1070588425';
+        }
+
+        return $this->login === $cedula;
     }
 
     public function isJefeArea(): bool
