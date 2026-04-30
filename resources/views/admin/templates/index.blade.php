@@ -156,7 +156,7 @@
         <div @click.outside="openModal = false"
              x-show="openModal" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 scale-90 translate-y-4" x-transition:enter-end="opacity-100 scale-100 translate-y-0"
              x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-90"
-             class="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+             class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col">
             <div class="bg-gradient-to-r from-blue-500 to-sky-500 px-6 py-5">
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-3">
@@ -234,37 +234,41 @@
                          class="absolute z-50 w-full mt-2 bg-white border-2 border-slate-200 rounded-xl shadow-2xl overflow-hidden">
                         
                         {{-- Búsqueda --}}
-                        <div class="p-3 border-b-2 border-slate-100 bg-slate-50">
+                        <div class="p-4 border-b-2 border-slate-100 bg-slate-50">
                             <div class="relative">
-                                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                                <input type="text" 
+                                <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                                <input type="text"
                                        x-model="searchQuery"
                                        @click.stop
-                                       placeholder="Buscar área..."
-                                       class="w-full pl-10 pr-4 py-2 border-2 border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all">
+                                       placeholder="Buscar área por nombre..."
+                                       class="w-full pl-11 pr-4 py-2.5 border-2 border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white">
+                                <button type="button" x-show="searchQuery" @click.stop="searchQuery = ''" class="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-slate-200 hover:bg-slate-300 flex items-center justify-center text-slate-600 transition-all">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
                             </div>
                         </div>
 
-                        {{-- Lista de áreas --}}
-                        <div class="max-h-64 overflow-y-auto" style="scrollbar-width: thin;">
-                            <template x-for="area in filteredAreas" :key="area.id">
-                                <label class="flex items-center gap-3 px-4 py-3 hover:bg-blue-50 cursor-pointer transition-all group border-b border-slate-100 last:border-b-0"
-                                       :class="{'bg-blue-50': isSelected(area)}">
-                                    <div class="relative flex items-center justify-center flex-shrink-0">
-                                        <input type="checkbox" 
+                        {{-- Lista de áreas en grid 2 columnas --}}
+                        <div class="max-h-96 overflow-y-auto p-3" style="scrollbar-width: thin;">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <template x-for="area in filteredAreas" :key="area.id">
+                                    <label class="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-all group border-2"
+                                           :class="isSelected(area) ? 'bg-blue-50 border-blue-300 shadow-sm' : 'border-transparent hover:bg-slate-50 hover:border-slate-200'">
+                                        <input type="checkbox"
                                                :value="area.id"
                                                :checked="isSelected(area)"
                                                @change="toggleArea(area)"
-                                               class="w-5 h-5 rounded-md text-blue-600 border-2 border-slate-300 focus:ring-2 focus:ring-blue-500 cursor-pointer transition-all">
-                                    </div>
-                                    <span class="text-sm font-medium text-slate-700 group-hover:text-blue-700 transition-colors flex-1" x-text="area.name"></span>
-                                    <svg x-show="isSelected(area)" class="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                                </label>
-                            </template>
+                                               class="w-4.5 h-4.5 rounded text-blue-600 border-2 border-slate-300 focus:ring-2 focus:ring-blue-500 cursor-pointer transition-all flex-shrink-0">
+                                        <span class="text-sm font-medium text-slate-700 group-hover:text-blue-700 transition-colors flex-1 truncate" :title="area.name" x-text="area.name"></span>
+                                        <svg x-show="isSelected(area)" class="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                    </label>
+                                </template>
+                            </div>
                             <template x-if="filteredAreas.length === 0">
-                                <div class="px-4 py-8 text-center text-slate-400">
-                                    <svg class="w-12 h-12 mx-auto mb-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                                    <p class="text-sm font-medium">No se encontraron áreas</p>
+                                <div class="px-4 py-12 text-center text-slate-400">
+                                    <svg class="w-14 h-14 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                                    <p class="text-sm font-semibold text-slate-500">No se encontraron áreas</p>
+                                    <p class="text-xs text-slate-400 mt-1">Intenta con otro término de búsqueda</p>
                                 </div>
                             </template>
                         </div>
