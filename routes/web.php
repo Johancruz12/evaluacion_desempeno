@@ -5,6 +5,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DevelopmentPlanController;
 use App\Http\Controllers\EvaluationBuilderController;
 use App\Http\Controllers\EvaluationController;
+use App\Http\Controllers\JefeController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\Admin\AreaController;
@@ -35,6 +36,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/password/change', [AuthController::class, 'changePassword'])->name('password.update');
 
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Jefe — Mi equipo (requires jefe_area or director_rh role)
+    Route::middleware('role:jefe_area,director_rh')->get('/mi-equipo', [JefeController::class, 'team'])->name('jefe.team');
 
     // Evaluations – all authenticated users
     Route::get('/evaluations',         [EvaluationController::class, 'index'])->name('evaluations.index');
