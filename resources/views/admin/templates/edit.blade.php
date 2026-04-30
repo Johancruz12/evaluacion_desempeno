@@ -58,21 +58,10 @@ $totalMaxScore = $template->sections->sum(fn($s) => $s->criteria->sum('max_score
         <div class="p-6">
             <form method="POST" action="{{ route('admin.templates.update', $template) }}" class="space-y-5">
                 @csrf @method('PUT')
-                <div class="flex flex-col sm:flex-row gap-4">
-                    <div class="flex-1">
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Nombre</label>
-                        <input type="text" name="name" value="{{ old('name', $template->name) }}" required
-                               class="w-full px-4 py-3 border border-slate-200 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-slate-50 focus:bg-white">
-                    </div>
-                    <div class="sm:w-64">
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Cargo asociado</label>
-                        <select name="position_type_id" class="w-full px-4 py-3 border border-slate-200 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 focus:bg-white">
-                            <option value="">Aplica para todos</option>
-                            @foreach($positionTypes as $pt)
-                            <option value="{{ $pt->id }}" {{ $template->position_type_id == $pt->id ? 'selected' : '' }}>{{ $pt->area?->name }} &rarr; {{ $pt->name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Nombre</label>
+                    <input type="text" name="name" value="{{ old('name', $template->name) }}" required
+                           class="w-full px-4 py-3 border border-slate-200 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-slate-50 focus:bg-white">
                 </div>
 
                 {{-- Areas --}}
