@@ -128,8 +128,14 @@ class JefeController extends Controller
             abort(403);
         }
 
-        $jefes = collect($this->salomon->getJefesWithEmployees())
-            ->filter(fn ($j) => $j->total_empleados > 0);
+        try {
+            $jefes = collect($this->salomon->getJefesWithEmployees())
+                ->filter(fn ($j) => $j->total_empleados > 0);
+            $salomonError = null;
+        } catch (\Throwable $e) {
+            $jefes = collect();
+            $salomonError = 'No se pudo conectar a Salomón: ' . $e->getMessage();
+        }
 
         // Load all local users indexed by document_number
         $allLocalUsers = User::with([
@@ -169,6 +175,6 @@ class JefeController extends Controller
             ];
         })->sortBy('area_nombre')->groupBy('area_nombre');
 
-        return view('admin.jefes-overview', compact('jefesData'));
+        return view('admin.jefes-overview', compact('jefesData', 'salomonError'));
     }
 }

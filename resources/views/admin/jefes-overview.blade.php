@@ -60,6 +60,17 @@ $completados    = $jefesData->flatten(1)->filter(fn($j) => $j['jefe_completed'] 
         </div>
     </div>
 
+    {{-- Error de conexión a Salomón --}}
+    @if(!empty($salomonError))
+    <div class="anim-fade-up bg-red-50 border border-red-200 rounded-2xl px-6 py-5 flex items-start gap-4">
+        <svg class="w-6 h-6 text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <div>
+            <p class="text-red-800 font-bold text-sm">No se pudo conectar al sistema Salomón</p>
+            <p class="text-red-600 text-xs mt-1">El driver ODBC para SQL Server no está instalado en este servidor. Contacte al administrador del sistema para instalarlo.</p>
+        </div>
+    </div>
+    @endif
+
     {{-- No Salomón data warning --}}
     @if($jefesData->isEmpty())
     <div class="anim-fade-up bg-amber-50 border border-amber-200 rounded-2xl px-6 py-8 text-center">
