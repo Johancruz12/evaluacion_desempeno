@@ -17,7 +17,9 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Revert, only safe if no extra values exist
-        DB::statement("ALTER TABLE evaluation_sections ALTER COLUMN type TYPE evaluation_sections_type_enum USING type::evaluation_sections_type_enum");
+        // Laravel's enum() on PostgreSQL uses a CHECK constraint, not a native enum type.
+        DB::statement('ALTER TABLE evaluation_sections DROP CONSTRAINT IF EXISTS evaluation_sections_type_check');
+        DB::statement('ALTER TABLE evaluation_sections ALTER COLUMN type TYPE VARCHAR(255)');
+        DB::statement("ALTER TABLE evaluation_sections ADD CONSTRAINT evaluation_sections_type_check CHECK (type IN ('competencias', 'responsabilidades', 'rango'))");
     }
 };
