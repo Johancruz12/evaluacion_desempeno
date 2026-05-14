@@ -65,42 +65,50 @@ class Evaluation extends Model
         return $this->hasMany(EvaluationNotification::class);
     }
 
-    /** Sum per-criterion avg scores (each criterion scored 1–5). */
+    /**
+     * Calcula los totales de la evaluación en escala 0-100.
+     *
+     * Cada criterio se califica de 1 a 5. El puntaje total es el promedio
+     * de los puntajes por criterio convertido a porcentaje:
+     *   total = (sum(scores) / (count * 5)) * 100
+     *
+     * - `total_auto_score`: porcentaje de autoevaluación (empleado).
+     * - `total_evaluator_score`: porcentaje calificado por el jefe.
+     * - `final_score`: promedio ponderado entre auto y evaluador
+     *    (50/50 si ambos existen, o el que esté disponible).
+     */
     public function calculateScores(): void
     {
         $responses = $this->responses()->get();
 
-        $autoTotal = 0;
-        $evalTotal = 0;
-        $finalTotal = 0;
-        $count = 0;
+        $autoSum = 0; $autoCount = 0;
+        $evalSum = 0; $evalCount = 0;
 
         foreach ($responses as $r) {
-            $auto = $r->auto_score !== null ? (float) $r->auto_score : null;
-            $eval = $r->evaluator_score !== null ? (float) $r->evaluator_score : null;
-
-            if ($auto !== null) {
-                $autoTotal += $auto;
+            if ($r->auto_score !== null) {
+                $autoSum += (float) $r->auto_score;
+                $autoCount++;
             }
-            if ($eval !== null) {
-                $evalTotal += $eval;
-            }
-
-            if ($auto !== null && $eval !== null) {
-                $finalTotal += ($auto + $eval) / 2;
-                $count++;
-            } elseif ($auto !== null) {
-                $finalTotal += $auto;
-                $count++;
-            } elseif ($eval !== null) {
-                $finalTotal += $eval;
-                $count++;
+            if ($r->evaluator_score !== null) {
+                $evalSum += (float) $r->evaluator_score;
+                $evalCount++;
             }
         }
 
-        $this->total_auto_score  = $count > 0 ? round($autoTotal, 2)  : null;
-        $this->total_evaluator_score = $count > 0 ? round($evalTotal, 2) : null;
-        $this->final_score = $count > 0 ? round($finalTotal, 2) : null;
+        // Convertir a porcentaje 0-100 (score / max=5 * 100)
+        $autoPct = $autoCount > 0 ? ($autoSum / ($autoCount * 5)) * 100 : null;
+        $evalPct = $evalCount > 0 ? ($evalSum / ($evalCount * 5)) * 100 : null;
+
+        // Final = promedio entre los dos cuando ambos existen
+        if ($autoPct !== null && $evalPct !== null) {
+            $finalPct = ($autoPct + $evalPct) / 2;
+        } else {
+            $finalPct = $autoPct ?? $evalPct;
+        }
+
+        $this->total_auto_score      = $autoPct !== null ? round($autoPct, 2) : null;
+        $this->total_evaluator_score = $evalPct !== null ? round($evalPct, 2) : null;
+        $this->final_score           = $finalPct !== null ? round($finalPct, 2) : null;
         $this->save();
     }
 
@@ -124,5 +132,40 @@ class Evaluation extends Model
     {
         return $this->responses()->whereNull('auto_score')->count() === 0
             && $this->responses()->count() > 0;
+    }
+
+    /**
+     * Garantiza que existan filas en `evaluation_responses` para cada criterio
+     * activo del template. Necesario porque la migración tiene
+     * `cascade on delete` desde criterios; si se edita la plantilla, las
+     * respuestas previas se pierden y la evaluación queda sin filas.
+     * Idempotente.
+     */
+    public function ensureResponses(): int
+    {
+        $this->loadMissing('template.sections.criteria');
+        if (!$this->template) {
+            return 0;
+        }
+
+        $created = 0;
+        foreach ($this->template->sections as $section) {
+            if (!$section->is_active) {
+                continue;
+            }
+            foreach ($section->criteria as $criteria) {
+                if (!$criteria->is_active) {
+                    continue;
+                }
+                $resp = EvaluationResponse::firstOrCreate([
+                    'evaluation_id' => $this->id,
+                    'criteria_id'   => $criteria->id,
+                ]);
+                if ($resp->wasRecentlyCreated) {
+                    $created++;
+                }
+            }
+        }
+        return $created;
     }
 }

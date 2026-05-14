@@ -46,28 +46,44 @@ class SyncSalomonData extends Command
         $areas = $salomon->getAllAreas();
         $created = 0;
         $updated = 0;
+        $linked = 0;
 
         foreach ($areas as $area) {
             $local = Area::where('salomon_codigo', $area->codigo)->first();
 
+            // Si no existe por código, intentar enlazar por nombre normalizado
+            if (!$local) {
+                $local = Area::whereNull('salomon_codigo')
+                    ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($area->nombre))])
+                    ->first();
+                if ($local) {
+                    $local->update([
+                        'salomon_codigo' => $area->codigo,
+                        'is_active'      => (bool) $area->activo,
+                    ]);
+                    $linked++;
+                    continue;
+                }
+            }
+
             if ($local) {
                 $local->update([
-                    'name' => trim($area->nombre),
+                    'name'      => trim($area->nombre),
                     'is_active' => (bool) $area->activo,
                 ]);
                 $updated++;
             } else {
                 Area::create([
-                    'name' => trim($area->nombre),
-                    'description' => trim($area->descripcion ?? ''),
-                    'is_active' => (bool) $area->activo,
+                    'name'           => trim($area->nombre),
+                    'description'    => trim($area->descripcion ?? ''),
+                    'is_active'      => (bool) $area->activo,
                     'salomon_codigo' => $area->codigo,
                 ]);
                 $created++;
             }
         }
 
-        $this->info("   Áreas: {$created} creadas, {$updated} actualizadas (total: " . count($areas) . ')');
+        $this->info("   Áreas: {$created} creadas, {$linked} enlazadas por nombre, {$updated} actualizadas (total: " . count($areas) . ')');
     }
 
     private function syncCargos(SalomonService $salomon): void
@@ -77,27 +93,43 @@ class SyncSalomonData extends Command
         $cargos = $salomon->getAllCargos();
         $created = 0;
         $updated = 0;
+        $linked = 0;
 
         foreach ($cargos as $cargo) {
             $local = PositionType::where('salomon_codigo', $cargo->codigo)->first();
 
+            // Enlazar por nombre si no existe por código
+            if (!$local) {
+                $local = PositionType::whereNull('salomon_codigo')
+                    ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($cargo->nombre))])
+                    ->first();
+                if ($local) {
+                    $local->update([
+                        'salomon_codigo' => $cargo->codigo,
+                        'is_active'      => (bool) $cargo->activo,
+                    ]);
+                    $linked++;
+                    continue;
+                }
+            }
+
             if ($local) {
                 $local->update([
-                    'name' => trim($cargo->nombre),
+                    'name'      => trim($cargo->nombre),
                     'is_active' => (bool) $cargo->activo,
                 ]);
                 $updated++;
             } else {
                 PositionType::create([
-                    'name' => trim($cargo->nombre),
-                    'is_active' => (bool) $cargo->activo,
+                    'name'           => trim($cargo->nombre),
+                    'is_active'      => (bool) $cargo->activo,
                     'salomon_codigo' => $cargo->codigo,
                 ]);
                 $created++;
             }
         }
 
-        $this->info("   Cargos: {$created} creados, {$updated} actualizados (total: " . count($cargos) . ')');
+        $this->info("   Cargos: {$created} creados, {$linked} enlazados por nombre, {$updated} actualizados (total: " . count($cargos) . ')');
     }
 
     private function syncEmpleados(SalomonService $salomon): void
@@ -116,29 +148,47 @@ class SyncSalomonData extends Command
                 continue;
             }
 
-            // Ensure area exists
+            // Ensure area exists (matching first by salomon_codigo, then by name)
             $area = null;
             if ($emp->area_codigo) {
-                $area = Area::firstOrCreate(
-                    ['salomon_codigo' => $emp->area_codigo],
-                    [
-                        'name' => trim($emp->area_nombre ?? 'Sin área'),
-                        'is_active' => true,
-                    ]
-                );
+                $area = Area::where('salomon_codigo', $emp->area_codigo)->first();
+                if (!$area && !empty($emp->area_nombre)) {
+                    $area = Area::whereNull('salomon_codigo')
+                        ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($emp->area_nombre))])
+                        ->first();
+                    if ($area) {
+                        $area->update(['salomon_codigo' => $emp->area_codigo]);
+                    }
+                }
+                if (!$area) {
+                    $area = Area::create([
+                        'name'           => trim($emp->area_nombre ?? 'Sin área'),
+                        'is_active'      => true,
+                        'salomon_codigo' => $emp->area_codigo,
+                    ]);
+                }
             }
 
-            // Ensure cargo exists
+            // Ensure cargo exists (matching first by salomon_codigo, then by name)
             $cargo = null;
             if ($emp->cargo_codigo) {
-                $cargo = PositionType::firstOrCreate(
-                    ['salomon_codigo' => $emp->cargo_codigo],
-                    [
-                        'name' => trim($emp->cargo_nombre ?? 'Sin cargo'),
-                        'area_id' => $area?->id,
-                        'is_active' => true,
-                    ]
-                );
+                $cargo = PositionType::where('salomon_codigo', $emp->cargo_codigo)->first();
+                if (!$cargo && !empty($emp->cargo_nombre)) {
+                    $cargo = PositionType::whereNull('salomon_codigo')
+                        ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($emp->cargo_nombre))])
+                        ->first();
+                    if ($cargo) {
+                        $cargo->update(['salomon_codigo' => $emp->cargo_codigo]);
+                    }
+                }
+                if (!$cargo) {
+                    $cargo = PositionType::create([
+                        'name'           => trim($emp->cargo_nombre ?? 'Sin cargo'),
+                        'area_id'        => $area?->id,
+                        'is_active'      => true,
+                        'salomon_codigo' => $emp->cargo_codigo,
+                    ]);
+                }
             }
 
             // Find or create person
@@ -175,6 +225,7 @@ class SyncSalomonData extends Command
                     'password' => Hash::make($emp->cedula),
                     'person_id' => $person->id,
                     'position_type_id' => $cargo?->id,
+                    'area_id' => $area?->id,
                     'is_active' => true,
                     'must_change_password' => true,
                     'salomon_codigo' => $emp->trabajador_codigo,
@@ -187,9 +238,10 @@ class SyncSalomonData extends Command
                 }
             } else {
                 $user->update([
-                    'person_id' => $person->id,
+                    'person_id'        => $person->id,
                     'position_type_id' => $cargo?->id,
-                    'salomon_codigo' => $emp->trabajador_codigo,
+                    'area_id'          => $area?->id,
+                    'salomon_codigo'   => $emp->trabajador_codigo,
                 ]);
             }
         }

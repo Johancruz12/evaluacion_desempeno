@@ -7,6 +7,7 @@ use App\Http\Controllers\EvaluationBuilderController;
 use App\Http\Controllers\EvaluationController;
 use App\Http\Controllers\JefeController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\Admin\AreaController;
 use App\Http\Controllers\Admin\EvaluationTemplateController;
@@ -22,9 +23,16 @@ Route::middleware('guest')->group(function () {
     Route::get('/login',  [AuthController::class, 'showLogin'])->name('login');
     Route::post('/login', [AuthController::class, 'login']);
 
-    // "Olvidé mi contraseña" — valida cédula contra Salomón y resetea password = cédula
-    Route::get('/password/forgot',  [AuthController::class, 'showForgotPassword'])->name('password.forgot');
-    Route::post('/password/forgot', [AuthController::class, 'forgotPassword'])->name('password.forgot.submit');
+    // "Olvidé mi contraseña" — flujo con código OTP (cédula + teléfono → código por correo → nueva contraseña)
+    Route::get('/password/forgot',           [PasswordResetController::class, 'showRequest'])->name('password.otp.request');
+    Route::post('/password/forgot',          [PasswordResetController::class, 'sendCode'])->name('password.otp.send');
+    Route::get('/password/verify',           [PasswordResetController::class, 'showVerify'])->name('password.otp.verify.show');
+    Route::post('/password/verify',          [PasswordResetController::class, 'verifyCode'])->name('password.otp.verify');
+    Route::get('/password/reset',            [PasswordResetController::class, 'showReset'])->name('password.otp.reset.show');
+    Route::post('/password/reset',           [PasswordResetController::class, 'reset'])->name('password.otp.reset');
+
+    // Alias para compatibilidad con vistas que aún apuntan al nombre antiguo
+    Route::get('/password/forgot-legacy', fn() => redirect()->route('password.otp.request'))->name('password.forgot');
 });
 
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth')->name('logout');
@@ -34,6 +42,12 @@ Route::middleware('auth')->group(function () {
     // Password change (must be before other routes so middleware can redirect here)
     Route::get('/password/change',  [AuthController::class, 'showChangePassword'])->name('password.change');
     Route::post('/password/change', [AuthController::class, 'changePassword'])->name('password.update');
+
+    // Cambio voluntario con OTP (usuario logueado): teléfono → código → cambio
+    Route::get('/password/change/otp',         [AuthController::class, 'showChangeOtpRequest'])->name('password.otp.change.request');
+    Route::post('/password/change/otp',        [AuthController::class, 'sendChangeOtp'])->name('password.otp.change.send');
+    Route::get('/password/change/otp/verify',  [AuthController::class, 'showChangeOtpVerify'])->name('password.otp.change.verify');
+    Route::post('/password/change/otp/verify', [AuthController::class, 'verifyChangeOtp'])->name('password.otp.change.confirm');
 
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 

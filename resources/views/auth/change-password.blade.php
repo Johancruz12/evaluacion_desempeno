@@ -47,6 +47,15 @@
         </div>
         @endif
 
+        @if(!auth()->user()->must_change_password)
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+            <p class="text-amber-800 text-xs leading-relaxed">
+                🔒 <strong>Verificación por seguridad:</strong> al guardar, te pediremos un código de 6 dígitos
+                enviado a tu correo registrado para confirmar tu identidad.
+            </p>
+        </div>
+        @endif
+
         <form method="POST" action="{{ route('password.update') }}" class="space-y-4"
               x-data="{
                   pwd: '',

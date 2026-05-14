@@ -57,6 +57,46 @@ $sinCuenta      = $teamData->filter(fn($m) => is_null($m['local_user']))->count(
     </div>
     @endif
 
+    {{-- Jefes / Coordinadores del área --}}
+    @if(isset($areaJefes) && $areaJefes->count())
+    <div class="anim-fade-up bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="h-1 bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400"></div>
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h2 class="font-bold text-slate-800 flex items-center gap-2">
+                <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
+                Jefes y coordinadores del área
+            </h2>
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">{{ $areaJefes->count() }} responsable{{ $areaJefes->count() === 1 ? '' : 's' }}</span>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-5">
+            @foreach($areaJefes as $jefe)
+            @php
+                $isMe = $jefe->id === auth()->id();
+                $jName = $jefe->person ? trim($jefe->person->first_name.' '.$jefe->person->last_name) : ($jefe->name ?? 'Sin nombre');
+                $jInit = strtoupper(mb_substr($jefe->person?->first_name ?? $jName, 0, 1)).strtoupper(mb_substr($jefe->person?->last_name ?? '', 0, 1));
+            @endphp
+            <div class="flex items-center gap-3 px-4 py-3 rounded-xl border {{ $isMe ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200' }}">
+                <div class="w-11 h-11 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-sm">
+                    {{ $jInit ?: '?' }}
+                </div>
+                <div class="min-w-0 flex-1">
+                    <p class="text-sm font-semibold text-slate-800 truncate">
+                        {{ $jName }}
+                        @if($isMe)
+                        <span class="ml-1 text-[10px] font-bold uppercase text-amber-600">(tú)</span>
+                        @endif
+                    </p>
+                    <p class="text-xs text-slate-500 truncate">{{ $jefe->positionType?->name ?? 'Jefe / Coordinador' }}</p>
+                    @if($jefe->person?->document_number)
+                    <p class="text-[11px] text-slate-400 font-mono mt-0.5">CC {{ $jefe->person->document_number }}</p>
+                    @endif
+                </div>
+            </div>
+            @endforeach
+        </div>
+    </div>
+    @endif
+
     {{-- Stats --}}
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 anim-fade-up">
         <div class="bg-white rounded-2xl border border-slate-200 px-5 py-4 flex items-center gap-3 shadow-sm">

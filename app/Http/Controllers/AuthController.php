@@ -7,6 +7,7 @@ use App\Models\Person;
 use App\Models\PositionType;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\OtpService;
 use App\Services\SalomonService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -105,12 +106,88 @@ class AuthController extends Controller
             ]);
         }
 
+        // Seguridad adicional: si el usuario NO está en "must_change_password" (cambio voluntario),
+        // exigir que haya verificado un OTP enviado a su teléfono/correo.
+        if (!$user->must_change_password) {
+            $otp = app(OtpService::class);
+            if (!$otp->hasRecentlyVerified($user->login, 'change')) {
+                return redirect()->route('password.otp.change.request')
+                    ->with('status', 'Por seguridad, debes verificar tu identidad con un código antes de cambiar tu contraseña.');
+            }
+        }
+
         $user->update([
             'password' => $request->password,
             'must_change_password' => false,
         ]);
 
         return redirect('/dashboard')->with('success', 'Contraseña actualizada correctamente. Tu cuenta está segura.');
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    //  Cambio voluntario con OTP (usuario logueado)
+    // ─────────────────────────────────────────────────────────────
+    public function showChangeOtpRequest()
+    {
+        return view('auth.password.change-request');
+    }
+
+    public function sendChangeOtp(Request $request, OtpService $otpService)
+    {
+        $data = $request->validate([
+            'phone' => ['required', 'string', 'max:30'],
+            'email' => ['required', 'email', 'max:255', 'ends_with:@junical.com.co'],
+        ], [
+            'phone.required' => 'Ingresa tu número de teléfono.',
+            'email.required' => 'Ingresa el correo donde quieres recibir el código.',
+            'email.email'    => 'El correo no tiene un formato válido.',
+            'email.ends_with' => 'Debes ingresar un correo institucional (@junical.com.co).',
+        ]);
+
+        $user = $request->user()->load('person');
+
+        $resolved = $otpService->resolveUser($user->login, $data['phone']);
+        if (!$resolved || $resolved->id !== $user->id) {
+            return back()->withErrors([
+                'phone' => 'El teléfono no coincide con el registrado para tu usuario.',
+            ])->onlyInput('phone');
+        }
+
+        $otpService->generateAndSend($user, $data['phone'], $data['email'], 'change', $request->ip());
+
+        $request->session()->put('otp.change.email', $data['email']);
+
+        $masked = $this->maskEmail($data['email']);
+        return redirect()->route('password.otp.change.verify')->with('status',
+            "Enviamos un código de 6 dígitos a {$masked}. Ingrésalo a continuación.");
+    }
+
+    private function maskEmail(string $email): string
+    {
+        [$local, $domain] = explode('@', $email, 2);
+        $visible = mb_substr($local, 0, min(3, mb_strlen($local)));
+        return $visible . str_repeat('*', max(0, mb_strlen($local) - 3)) . '@' . $domain;
+    }
+
+    public function showChangeOtpVerify()
+    {
+        return view('auth.password.change-verify');
+    }
+
+    public function verifyChangeOtp(Request $request, OtpService $otpService)
+    {
+        $data = $request->validate([
+            'code' => ['required', 'string', 'digits:6'],
+        ], ['code.digits' => 'El código debe ser de 6 dígitos.']);
+
+        $user = $request->user();
+
+        if (!$otpService->verify($user->login, $data['code'], 'change')) {
+            return back()->withErrors(['code' => 'Código incorrecto o expirado.']);
+        }
+
+        return redirect()->route('password.change')->with('status',
+            'Identidad verificada. Ahora puedes definir tu nueva contraseña.');
     }
 
     /**

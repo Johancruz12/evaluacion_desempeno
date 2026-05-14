@@ -40,6 +40,24 @@ class SalomonService
     }
 
     /**
+     * Devuelve solo el teléfono de un empleado activo desde Salomón.
+     * Se usa para sincronizar datos locales cuando persons.phone está vacío.
+     */
+    public function getPhoneByCedula(string $cedula): ?string
+    {
+        $results = DB::connection('salomon')->select("
+            SELECT TOP 1 h.telefono_residencia AS telefono
+            FROM per.hoja_vida h
+            INNER JOIN tbm.trabajador t ON t.hoja = h.codigo
+            INNER JOIN nom.contrato ct ON ct.trabajador = t.codigo AND ct.activo = 1
+            WHERE h.identifica = ?
+        ", [$cedula]);
+
+        $phone = $results[0]->telefono ?? null;
+        return ($phone && trim($phone) !== '') ? trim($phone) : null;
+    }
+
+    /**
      * Get all active areas from Salomón.
      */
     public function getAllAreas(): array

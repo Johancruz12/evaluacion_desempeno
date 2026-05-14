@@ -222,7 +222,7 @@
             </div>
         </div>
     </div>
-    @elseif($isJefeEvaluatingEmployee && $evaluation->status !== 'completada')
+    @elseif($isEvaluator && !$autoEvalComplete && $evaluation->status !== 'revisada')
     <div class="rounded-2xl border overflow-hidden bg-amber-50 border-amber-200">
         <div class="flex items-start gap-4 p-4 sm:p-5">
             <div class="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center bg-amber-100">
@@ -231,7 +231,7 @@
             <div class="flex-1 min-w-0">
                 <h3 class="text-sm font-bold text-amber-800">⏳ Esperando autoevaluación del empleado</h3>
                 <p class="text-xs text-amber-700 mt-1 leading-relaxed">
-                    <strong>{{ $evaluation->employee?->name }}</strong> aún no ha completado su autoevaluación. Podrás calificarlo una vez que la finalice.
+                    <strong>{{ $evaluation->employee?->name }}</strong> aún no ha completado su autoevaluación. Podrás calificarlo, comentar y registrar plan de desarrollo una vez que la finalice.
                 </p>
             </div>
         </div>
@@ -535,13 +535,21 @@
                                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/></svg>
                                         Calificación jefe
                                     </span>
-                                    @if(!$isReadOnly)
+                                    @if(!$isReadOnly && $autoEvalComplete)
                                     <div class="flex gap-1">
                                         @foreach([1,2,3,4,5] as $v)
                                         <button type="button" @click="setScore({{ $c->id }}, 'evaluator', {{ $v }})"
                                                 :class="scores[{{ $c->id }}]?.evaluator === {{ $v }} ? scoreActiveClass({{ $v }}) : 'bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600'"
                                                 class="w-9 h-9 rounded-full font-bold text-sm transition-all duration-150 hover:scale-110 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-sky-500"
                                                 title="{{ $scaleLabels[$v] }}">{{ $v }}</button>
+                                        @endforeach
+                                    </div>
+                                    @elseif(!$isReadOnly && !$autoEvalComplete)
+                                    <div class="flex gap-1 opacity-50 cursor-not-allowed" title="El empleado debe completar su autoevaluación primero">
+                                        @foreach([1,2,3,4,5] as $v)
+                                        <button type="button" disabled
+                                                class="w-9 h-9 rounded-full font-bold text-sm bg-slate-100 text-slate-300 cursor-not-allowed"
+                                                title="Bloqueado: el empleado aún no completa su autoevaluación">{{ $v }}</button>
                                         @endforeach
                                     </div>
                                     @else
@@ -568,16 +576,23 @@
                                     </div>
                                 </div>
 
-                                @if(!$isReadOnly)
+                                @if(!$isReadOnly && $isEvaluator && $autoEvalComplete)
                                 <div class="flex-1 min-w-[150px]">
                                     <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Observación</span>
                                     <input type="text" name="responses[{{ $c->id }}][comment]" value="{{ $resp?->comment }}"
                                            placeholder="Escribe un comentario…"
                                            class="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-white hover:border-slate-300 transition-colors placeholder-slate-300">
                                 </div>
+                                @elseif(!$isReadOnly && $isEvaluator && !$autoEvalComplete)
+                                <div class="flex-1 min-w-[150px]">
+                                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Observación</span>
+                                    <input type="text" disabled
+                                           placeholder="Disponible cuando el empleado complete su autoevaluación"
+                                           class="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-300 bg-slate-50 placeholder-slate-300 cursor-not-allowed">
+                                </div>
                                 @elseif($resp?->comment)
                                 <div class="flex-1">
-                                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Observación</span>
+                                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Observación del jefe</span>
                                     <span class="text-xs text-slate-500 italic">{{ $resp->comment }}</span>
                                 </div>
                                 @endif
@@ -667,7 +682,8 @@
     @endif
 
     {{-- Observations --}}
-    @if($isEvaluator)
+    @if($isEvaluator || $isEmployee)
+    @php $obsReadOnly = $isReadOnly || $isEmployee || ($isEvaluator && !$autoEvalComplete); @endphp
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center gap-3">
             <div class="w-8 h-8 rounded-xl bg-slate-700 text-white flex items-center justify-center">
@@ -675,7 +691,15 @@
             </div>
             <div>
                 <h2 class="font-bold text-slate-800 text-sm">Observaciones generales</h2>
-                <p class="text-xs text-slate-400">Solo visible para jefe y RRHH</p>
+                <p class="text-xs text-slate-400">
+                    @if($isEvaluator && !$autoEvalComplete)
+                        Disponible una vez que el empleado complete su autoevaluación
+                    @elseif($isEmployee)
+                        Observaciones registradas por tu jefe
+                    @else
+                        Solo el jefe y RR.HH. pueden editar
+                    @endif
+                </p>
             </div>
         </div>
         <form method="POST" action="{{ route('evaluations.save-observations', $evaluation) }}" class="p-5 space-y-4">
@@ -684,13 +708,13 @@
                 @foreach(['obs_organizacional'=>'Organizacionales','obs_cargo'=>'Del Cargo','obs_responsabilidades'=>'Responsabilidades'] as $field => $label)
                 <div>
                     <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{{ $label }}</label>
-                    <textarea name="{{ $field }}" rows="4" {{ $isReadOnly?'readonly':'' }}
-                              class="w-full border border-slate-200 rounded-xl text-sm px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none {{ $isReadOnly?'bg-slate-50 text-slate-500':'' }}"
-                              placeholder="Observaciones sobre {{ strtolower($label) }}…">{{ $evaluation->$field }}</textarea>
+                    <textarea name="{{ $field }}" rows="4" {{ $obsReadOnly?'readonly':'' }}
+                              class="w-full border border-slate-200 rounded-xl text-sm px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none {{ $obsReadOnly?'bg-slate-50 text-slate-500':'' }}"
+                              placeholder="{{ $isEmployee ? 'Sin observaciones registradas' : 'Observaciones sobre '.strtolower($label).'…' }}">{{ $evaluation->$field }}</textarea>
                 </div>
                 @endforeach
             </div>
-            @if(!$isReadOnly)
+            @if(!$obsReadOnly)
             <div class="flex justify-end">
                 <button type="submit" class="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-700 hover:bg-slate-600 text-white text-sm font-bold rounded-xl transition-colors">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
@@ -745,7 +769,8 @@
     @endif
 
     {{-- Development Plan --}}
-    @if($isEvaluator)
+    @if($isEvaluator || $isEmployee)
+    @php $planCanEdit = $isEvaluator && !$isReadOnly && $autoEvalComplete; @endphp
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div class="px-5 py-4 bg-blue-50 border-b border-blue-200 flex items-center gap-3">
             <div class="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center">
@@ -753,7 +778,7 @@
             </div>
             <div>
                 <h2 class="font-bold text-slate-800 text-sm">Plan de Desarrollo</h2>
-                <p class="text-xs text-blue-600">Acciones de mejora para el empleado</p>
+                <p class="text-xs text-blue-600">{{ $isEmployee ? 'Acciones de mejora asignadas por tu jefe' : 'Acciones de mejora para el empleado' }}</p>
             </div>
         </div>
         @if($evaluation->developmentPlans->count())
@@ -766,7 +791,7 @@
                         <th class="px-4 py-3 text-left font-bold text-slate-600">Responsable</th>
                         <th class="px-4 py-3 text-left font-bold text-slate-600">Seguimiento</th>
                         <th class="px-4 py-3 text-left font-bold text-slate-600">Notas</th>
-                        @if(!$isReadOnly)<th class="px-4 py-3 w-20"></th>@endif
+                        @if($planCanEdit)<th class="px-4 py-3 w-20"></th>@endif
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-50">
@@ -777,7 +802,7 @@
                         <td class="px-4 py-3 text-slate-600">{{ $plan->responsable }}</td>
                         <td class="px-4 py-3 text-slate-500">{{ $plan->fecha_seguimiento?->format('d/m/Y') ?? '—' }}</td>
                         <td class="px-4 py-3 text-xs text-slate-400">{{ $plan->observaciones ?? '—' }}</td>
-                        @if(!$isReadOnly)
+                        @if($planCanEdit)
                         <td class="px-4 py-3">
                             <form method="POST" action="{{ route('development-plans.destroy',$plan) }}" class="inline" onsubmit="return confirm('⚠️ ¿Eliminar este ítem del plan de desarrollo?\n\nSe perderá la actividad y sus observaciones. Esta acción no se puede deshacer.')">
                                 @csrf @method('DELETE')
@@ -799,10 +824,12 @@
                 <svg class="w-6 h-6 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
             </div>
             <p class="text-sm text-slate-400">Sin ítems en el plan de desarrollo</p>
+            @if($planCanEdit)
             <p class="text-xs text-slate-300 mt-1">Agrega actividades de mejora para el empleado</p>
+            @endif
         </div>
         @endif
-        @if(!$isReadOnly)
+        @if($planCanEdit)
         <form method="POST" action="{{ route('development-plans.store', $evaluation) }}" class="p-5 border-t border-slate-100 bg-slate-50/50">
             @csrf
             <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">

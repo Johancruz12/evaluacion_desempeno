@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Evaluation;
 use App\Models\EvaluationCriteria;
+use App\Models\EvaluationNotification;
 use App\Models\EvaluationResponse;
 use App\Models\EvaluationSection;
 use Illuminate\Http\Request;
@@ -203,7 +204,17 @@ class EvaluationBuilderController extends Controller
             ->first();
 
         if (!$response) {
-            return response()->json(['error' => 'Respuesta no encontrada.'], 404);
+            // Crear la respuesta faltante (caso: la plantilla se modificó
+            // y la fila se borró en cascada). Validamos que el criterio
+            // realmente pertenezca al template de la evaluación.
+            if ($criteria->section?->template_id === $evaluation->template_id) {
+                $response = EvaluationResponse::create([
+                    'evaluation_id' => $evaluation->id,
+                    'criteria_id'   => $criteria->id,
+                ]);
+            } else {
+                return response()->json(['error' => 'Respuesta no encontrada.'], 404);
+            }
         }
 
         $updateData = [];
@@ -217,6 +228,16 @@ class EvaluationBuilderController extends Controller
 
         // Admin y jefe de área pueden guardar evaluator_score y comentarios
         $canSaveEvaluatorScore = $user->isAdmin() || $isJefeEvaluatingEmployee;
+
+        // Regla: el evaluador NO puede calificar/comentar hasta que el empleado complete su autoevaluación
+        $autoCompleted = $evaluation->hasCompletedAutoEvaluation();
+        $tryingToScoreOrComment = array_key_exists('evaluator_score', $data) || array_key_exists('comment', $data);
+        if ($canSaveEvaluatorScore && !$autoCompleted && $tryingToScoreOrComment) {
+            return response()->json([
+                'error' => 'El empleado debe completar su autoevaluación antes de que puedas calificarlo o comentar.',
+            ], 422);
+        }
+
         if ($canSaveEvaluatorScore) {
             if (array_key_exists('evaluator_score', $data)) {
                 $updateData['evaluator_score'] = $data['evaluator_score'];
@@ -226,8 +247,23 @@ class EvaluationBuilderController extends Controller
             }
         }
 
+        // Detectar si el comentario cambió para notificar al empleado
+        $previousComment = (string) ($response->comment ?? '');
+        $newComment = array_key_exists('comment', $updateData) ? (string) ($updateData['comment'] ?? '') : $previousComment;
+        $commentChanged = $canSaveEvaluatorScore && $previousComment !== $newComment;
+
         if (!empty($updateData)) {
             $response->update($updateData);
+        }
+
+        if ($commentChanged && $evaluation->employee_id !== $user->id && trim($newComment) !== '') {
+            EvaluationNotification::create([
+                'user_id'       => $evaluation->employee_id,
+                'evaluation_id' => $evaluation->id,
+                'type'          => 'comment_added',
+                'title'         => 'Nuevo comentario de tu jefe',
+                'message'       => "{$user->name} agregó un comentario al criterio \"{$criteria->name}\" en tu evaluación \"{$evaluation->template->name}\".",
+            ]);
         }
 
         if ($evaluation->status === 'pendiente') {

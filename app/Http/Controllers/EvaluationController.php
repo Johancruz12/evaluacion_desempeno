@@ -257,6 +257,11 @@ class EvaluationController extends Controller
         // Verificar acceso jerárquicamente: Admin > Jefe > Empleado
         $this->authorizeEvaluationAccess($user, $evaluation);
 
+        // Asegurar filas de respuesta para todos los criterios activos del template
+        // (las migraciones tienen cascade on delete; si se modificó la plantilla,
+        // las respuestas previas pudieron borrarse y la evaluación quedar vacía).
+        $evaluation->ensureResponses();
+
         $evaluation->load([
             'template.sections.criteria',
             'template.scoringRanges',
@@ -312,6 +317,9 @@ class EvaluationController extends Controller
 
         // Verificar acceso a la evaluación
         $this->authorizeEvaluationAccess($user, $evaluation);
+
+        // Asegurar filas de respuesta (por si la plantilla cambió y se borraron en cascada)
+        $evaluation->ensureResponses();
 
         // Determinar si el usuario es jefe evaluando a un empleado de su área
         $isJefeEvaluatingEmployee = $user->isJefeArea() && !$user->isAdmin()
@@ -418,6 +426,11 @@ class EvaluationController extends Controller
         // Verificar acceso a la evaluación
         $this->authorizeEvaluationAccess($user, $evaluation);
 
+        // Regla: el jefe/admin no puede dejar observaciones hasta que el empleado complete su autoevaluación
+        if (!$evaluation->hasCompletedAutoEvaluation()) {
+            return back()->withErrors(['general' => 'El empleado debe completar su autoevaluación antes de que puedas registrar observaciones.']);
+        }
+
         $data = $request->validate([
             'obs_organizacional'    => ['nullable', 'string', 'max:2000'],
             'obs_cargo'             => ['nullable', 'string', 'max:2000'],
@@ -425,7 +438,32 @@ class EvaluationController extends Controller
             'observations'          => ['nullable', 'string', 'max:2000'],
         ]);
 
+        // Detectar qué bloques cambiaron para notificar al empleado
+        $labels = [
+            'obs_organizacional'    => 'Organizacionales',
+            'obs_cargo'             => 'Del Cargo',
+            'obs_responsabilidades' => 'Responsabilidades',
+        ];
+        $changed = [];
+        foreach ($labels as $field => $label) {
+            if (array_key_exists($field, $data) && (string)($data[$field] ?? '') !== (string)($evaluation->$field ?? '')) {
+                $changed[] = $label;
+            }
+        }
+
         $evaluation->update($data);
+
+        // Notificar al empleado si el evaluador (jefe/admin) cambió observaciones
+        if (!empty($changed) && $evaluation->employee_id !== $user->id) {
+            $bloques = implode(', ', $changed);
+            $this->notify(
+                $evaluation->employee_id,
+                $evaluation->id,
+                'observation_added',
+                'Nueva observación de tu jefe',
+                "{$user->name} actualizó las observaciones generales ({$bloques}) en tu evaluación \"{$evaluation->template->name}\"."
+            );
+        }
 
         return back()->with('success', 'Observaciones actualizadas correctamente en la evaluación.');
     }
