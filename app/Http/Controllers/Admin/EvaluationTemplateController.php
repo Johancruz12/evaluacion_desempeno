@@ -9,6 +9,7 @@ use App\Models\EvaluationSection;
 use App\Models\EvaluationCriteria;
 use App\Models\PositionType;
 use App\Models\ScoringRange;
+use App\Models\SectionType;
 use Illuminate\Http\Request;
 
 class EvaluationTemplateController extends Controller
@@ -53,7 +54,8 @@ class EvaluationTemplateController extends Controller
         $template->load(['sections.criteria', 'scoringRanges', 'positionType.area', 'areas']);
         $positionTypes = PositionType::with('area')->where('is_active', true)->get();
         $areas = Area::where('is_active', true)->orderBy('name')->get();
-        return view('admin.templates.edit', compact('template', 'positionTypes', 'areas'));
+        $sectionTypes = SectionType::activeOptions();
+        return view('admin.templates.edit', compact('template', 'positionTypes', 'areas', 'sectionTypes'));
     }
 
     public function update(Request $request, EvaluationTemplate $template)
@@ -89,13 +91,17 @@ class EvaluationTemplateController extends Controller
     // === SECTIONS ===
     public function storeSection(Request $request, EvaluationTemplate $template)
     {
+        $validSlugs = SectionType::map()->keys()->all();
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'type' => ['required', 'in:competencias_org,competencias_cargo,responsabilidades,rango'],
+            'type' => ['required', 'in:' . implode(',', $validSlugs)],
             'weight' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'content' => ['nullable', 'array'],
+            'content.*' => ['nullable', 'string'],
         ]);
 
+        $data['content'] = $this->normalizeContent($data['type'] ?? null, $data['content'] ?? null);
         $data['order'] = $template->sections()->count();
         $template->sections()->create($data);
 
@@ -104,16 +110,39 @@ class EvaluationTemplateController extends Controller
 
     public function updateSection(Request $request, EvaluationSection $section)
     {
+        $validSlugs = SectionType::map()->keys()->all();
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'type' => ['required', 'in:competencias_org,competencias_cargo,responsabilidades,rango'],
+            'type' => ['required', 'in:' . implode(',', $validSlugs)],
             'weight' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'is_active' => ['boolean'],
+            'content' => ['nullable', 'array'],
+            'content.*' => ['nullable', 'string'],
         ]);
 
+        $data['content'] = $this->normalizeContent($data['type'] ?? null, $data['content'] ?? null);
         $section->update($data);
         return back()->with('success', 'Sección actualizada correctamente.');
+    }
+
+    /**
+     * Filter empty paragraphs and keep content only for sections with 'texto' behavior.
+     */
+    private function normalizeContent(?string $typeSlug, ?array $content): ?array
+    {
+        if (!$typeSlug || empty($content)) {
+            return null;
+        }
+        $type = SectionType::map()->get($typeSlug);
+        if (!$type || $type->behavior !== 'texto') {
+            return null;
+        }
+        $clean = array_values(array_filter(
+            array_map(fn ($p) => trim((string) $p), $content),
+            fn ($p) => $p !== ''
+        ));
+        return $clean ?: null;
     }
 
     public function destroySection(EvaluationSection $section)

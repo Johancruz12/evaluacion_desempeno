@@ -26,7 +26,25 @@
         'competencias_cargo' => ['icon'=>'💼','label'=>'Comp. del Cargo','gradient'=>'from-sky-500 to-sky-600','bg'=>'bg-sky-50','border'=>'border-sky-200','badge'=>'bg-sky-100 text-sky-700','ring'=>'ring-sky-500/20'],
         'responsabilidades'  => ['icon'=>'✅','label'=>'Responsabilidades','gradient'=>'from-amber-500 to-amber-600','bg'=>'bg-amber-50','border'=>'border-amber-200','badge'=>'bg-amber-100 text-amber-700','ring'=>'ring-amber-500/20'],
         'rango'              => ['icon'=>'📊','label'=>'Tabla de Rangos','gradient'=>'from-slate-500 to-slate-600','bg'=>'bg-slate-50','border'=>'border-slate-200','badge'=>'bg-slate-100 text-slate-700','ring'=>'ring-slate-500/20'],
+        'texto'              => ['icon'=>'📝','label'=>'Información','gradient'=>'from-violet-500 to-purple-500','bg'=>'bg-violet-50','border'=>'border-violet-200','badge'=>'bg-violet-100 text-violet-700','ring'=>'ring-violet-500/20'],
     ];
+
+    // Merge DB-defined custom types (overrides system entries with admin-edited metadata).
+    try {
+        foreach (\App\Models\SectionType::map() as $slug => $t) {
+            $sectionMeta[$slug] = [
+                'icon'     => $t->icon ?: ($sectionMeta[$slug]['icon'] ?? '📌'),
+                'label'    => $t->label,
+                'gradient' => $t->gradient ?: ($sectionMeta[$slug]['gradient'] ?? 'from-slate-500 to-slate-600'),
+                'bg'       => $t->bg_class ?: ($sectionMeta[$slug]['bg'] ?? 'bg-slate-50'),
+                'border'   => $t->border_class ?: ($sectionMeta[$slug]['border'] ?? 'border-slate-200'),
+                'badge'    => $t->badge_class ?: ($sectionMeta[$slug]['badge'] ?? 'bg-slate-100 text-slate-700'),
+                'ring'     => $sectionMeta[$slug]['ring'] ?? 'ring-slate-500/20',
+            ];
+        }
+    } catch (\Throwable $e) {
+        // Table may not exist yet (before migration); silently ignore.
+    }
 
     $completedCount = $responsesMap->filter(fn($r) => $isEmployee ? $r->auto_score !== null : $r->evaluator_score !== null)->count();
     $rangoCount = 0;
@@ -418,7 +436,7 @@
                     @endif
                 </div>
 
-                @if($section->type !== 'rango')
+                @if($section->type !== 'rango' && $section->type !== 'texto')
                 @php
                     $secCriteriaIds = $section->criteria->where('is_active',true)->pluck('id')->toArray();
                     $secDone = 0; $secTotal = count($secCriteriaIds);
@@ -457,7 +475,22 @@
             </div>
 
             <div x-show="openSections[{{ $section->id }}]" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100">
-                @if($section->type === 'rango')
+                @if($section->type === 'texto')
+                <div class="p-5 space-y-3">
+                    @forelse((array) ($section->content ?? []) as $i => $paragraph)
+                    <div class="flex items-start gap-3">
+                        <div class="w-7 h-7 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">{{ $i + 1 }}</div>
+                        <p class="text-sm text-slate-700 leading-relaxed whitespace-pre-line flex-1">{{ $paragraph }}</p>
+                    </div>
+                    @empty
+                    @if($section->description)
+                    <p class="text-sm text-slate-700 leading-relaxed whitespace-pre-line">{{ $section->description }}</p>
+                    @else
+                    <p class="text-sm text-slate-400 italic">Sin contenido.</p>
+                    @endif
+                    @endforelse
+                </div>
+                @elseif($section->type === 'rango')
                 <div class="p-5">
                     <table class="w-full text-sm">
                         <thead>

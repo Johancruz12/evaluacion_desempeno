@@ -38,6 +38,12 @@ class AuthController extends Controller
             Auth::login($user, $request->boolean('remember'));
             $request->session()->regenerate();
 
+            // Seguridad: si la contraseña actual es igual a la cédula (login),
+            // forzar cambio de contraseña aunque la bandera no esté marcada.
+            if ($password === $cedula && !$user->must_change_password) {
+                $user->forceFill(['must_change_password' => true])->save();
+            }
+
             if ($user->must_change_password) {
                 return redirect()->route('password.change');
             }

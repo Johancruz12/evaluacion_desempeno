@@ -54,7 +54,7 @@ class JefeController extends Controller
 
         // 1) Empleados de Salomón en el área (FUENTE PRINCIPAL)
         $salomonEmployees = collect();
-        if ($areaSalomonCode) {
+        if ($areaSalomonCode && (extension_loaded('pdo_sqlsrv') || extension_loaded('sqlsrv'))) {
             try {
                 $rows = $this->salomon->getActiveEmployeesByArea((int) $areaSalomonCode);
                 $salomonEmployees = collect($rows)->filter(
@@ -65,6 +65,8 @@ class JefeController extends Controller
                 \Illuminate\Support\Facades\Log::warning('Salomón connection failed (team)', ['error' => $e->getMessage()]);
                 $salomonError = 'No fue posible obtener los datos de Salomón en este momento. Se muestran solo los datos locales.';
             }
+        } elseif ($areaSalomonCode) {
+            // Driver not installed — skip silently
         } else {
             $salomonError = 'El área no tiene código Salomón configurado.';
         }

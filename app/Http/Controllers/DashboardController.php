@@ -81,6 +81,11 @@ class DashboardController extends Controller
             'salomonSyncWarning' => null,
         ];
 
+        // If the SQL Server driver isn't installed, skip Salomón silently
+        if (!extension_loaded('pdo_sqlsrv') && !extension_loaded('sqlsrv')) {
+            return $data;
+        }
+
         $areaCodigo = $user->area?->salomon_codigo;
 
         if (!$areaCodigo) {

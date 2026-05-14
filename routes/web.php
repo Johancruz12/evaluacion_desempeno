@@ -114,6 +114,12 @@ Route::middleware('auth')->group(function () {
         Route::post('/templates/{template}/ranges', [EvaluationTemplateController::class, 'storeRange'])->name('templates.ranges.store');
         Route::put('/ranges/{range}',               [EvaluationTemplateController::class, 'updateRange'])->name('ranges.update');
         Route::delete('/ranges/{range}',            [EvaluationTemplateController::class, 'destroyRange'])->name('ranges.destroy');
+
+        // Section types (catalog)
+        Route::get('/section-types',                       [\App\Http\Controllers\Admin\SectionTypeController::class, 'index'])->name('section-types.index');
+        Route::post('/section-types',                      [\App\Http\Controllers\Admin\SectionTypeController::class, 'store'])->name('section-types.store');
+        Route::put('/section-types/{sectionType}',         [\App\Http\Controllers\Admin\SectionTypeController::class, 'update'])->name('section-types.update');
+        Route::delete('/section-types/{sectionType}',      [\App\Http\Controllers\Admin\SectionTypeController::class, 'destroy'])->name('section-types.destroy');
     });
 
     // Reports (admin only)

@@ -50,9 +50,10 @@ class EvaluationBuilderController extends Controller
     public function addSection(Request $request, Evaluation $evaluation)
     {
         $this->authorizeBuilder($evaluation);
+        $validSlugs = \App\Models\SectionType::map()->keys()->all();
         $data = $request->validate([
             'name'        => ['required', 'string', 'max:255'],
-            'type'        => ['required', 'in:competencias_org,competencias_cargo,responsabilidades,rango'],
+            'type'        => ['required', 'in:' . implode(',', $validSlugs)],
             'description' => ['nullable', 'string', 'max:1000'],
         ]);
 

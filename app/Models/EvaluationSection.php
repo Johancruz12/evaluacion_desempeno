@@ -8,13 +8,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class EvaluationSection extends Model
 {
-    protected $fillable = ['template_id', 'name', 'description', 'type', 'order', 'weight', 'is_active'];
+    protected $fillable = ['template_id', 'name', 'description', 'content', 'type', 'order', 'weight', 'is_active'];
 
     protected function casts(): array
     {
         return [
             'is_active' => 'boolean',
             'weight' => 'decimal:2',
+            'content' => 'array',
         ];
     }
 
