@@ -62,7 +62,8 @@ class JefeController extends Controller
                 )->values();
                 $usingSalomon = true;
             } catch (\Throwable $e) {
-                $salomonError = 'No se pudo conectar a Salomón: ' . $e->getMessage();
+                \Illuminate\Support\Facades\Log::warning('Salomón connection failed (team)', ['error' => $e->getMessage()]);
+                $salomonError = 'No fue posible obtener los datos de Salomón en este momento. Se muestran solo los datos locales.';
             }
         } else {
             $salomonError = 'El área no tiene código Salomón configurado.';

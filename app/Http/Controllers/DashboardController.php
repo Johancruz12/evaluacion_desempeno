@@ -92,7 +92,8 @@ class DashboardController extends Controller
             $salomonService = app(SalomonService::class);
             $employees = $salomonService->getActiveEmployeesByArea($areaCodigo);
         } catch (\Throwable $e) {
-            $data['salomonSyncWarning'] = 'No se pudo conectar con Salomón: ' . $e->getMessage();
+            \Illuminate\Support\Facades\Log::warning('Salomón connection failed (dashboard)', ['error' => $e->getMessage()]);
+            $data['salomonSyncWarning'] = 'No fue posible obtener los datos de Salomón en este momento. Intenta recargar la página o contacta al administrador.';
             return $data;
         }
 
