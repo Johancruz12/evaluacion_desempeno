@@ -15,6 +15,7 @@ class Evaluation extends Model
         'obs_organizacional', 'obs_cargo', 'obs_responsabilidades',
         'reopen_reason', 'reopen_deadline', 'reopened_at', 'reopened_by',
         'total_auto_score', 'total_evaluator_score', 'final_score',
+        'evaluator_submitted_at',
     ];
 
     protected function casts(): array
@@ -27,6 +28,7 @@ class Evaluation extends Model
             'total_auto_score' => 'decimal:2',
             'total_evaluator_score' => 'decimal:2',
             'final_score' => 'decimal:2',
+            'evaluator_submitted_at' => 'datetime',
         ];
     }
 

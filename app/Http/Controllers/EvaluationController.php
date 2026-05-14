@@ -337,6 +337,11 @@ class EvaluationController extends Controller
             return back()->withErrors(['general' => 'Ya finalizaste tu autoevaluación. No puedes modificarla.']);
         }
 
+        // El jefe ya finalizó su calificación: bloqueado para no-admins
+        if ($evaluation->evaluator_submitted_at && $isJefeEvaluatingEmployee) {
+            return back()->withErrors(['general' => 'Ya finalizaste tu calificación. No puedes realizar más cambios.']);
+        }
+
         $request->validate([
             'responses'                   => ['required', 'array'],
             'responses.*.criteria_id'     => ['required', 'exists:evaluation_criteria,id'],
@@ -431,6 +436,14 @@ class EvaluationController extends Controller
             return back()->withErrors(['general' => 'El empleado debe completar su autoevaluación antes de que puedas registrar observaciones.']);
         }
 
+        // El jefe ya finalizó: bloqueado para no-admins
+        $isJefeEval = $user->isJefeArea() && !$user->isAdmin()
+            && $evaluation->employee_id !== $user->id
+            && $evaluation->employee?->area_id === $user->area_id;
+        if ($evaluation->evaluator_submitted_at && $isJefeEval) {
+            return back()->withErrors(['general' => 'Ya finalizaste tu calificación. No puedes modificar las observaciones.']);
+        }
+
         $data = $request->validate([
             'obs_organizacional'    => ['nullable', 'string', 'max:2000'],
             'obs_cargo'             => ['nullable', 'string', 'max:2000'],
@@ -466,6 +479,41 @@ class EvaluationController extends Controller
         }
 
         return back()->with('success', 'Observaciones actualizadas correctamente en la evaluación.');
+    }
+
+    public function submitEvaluator(Request $request, Evaluation $evaluation)
+    {
+        $user = $request->user();
+
+        $isJefeEvaluatingEmployee = $user->isJefeArea() && !$user->isAdmin()
+            && $evaluation->employee_id !== $user->id
+            && $evaluation->employee?->area_id === $user->area_id;
+
+        if (!$user->isAdmin() && !$isJefeEvaluatingEmployee) {
+            abort(403);
+        }
+
+        if ($evaluation->evaluator_submitted_at) {
+            return back()->withErrors(['general' => 'Ya finalizaste tu calificación. No puedes modificarla.']);
+        }
+
+        if (!$evaluation->hasCompletedAutoEvaluation()) {
+            return back()->withErrors(['general' => 'El empleado debe completar su autoevaluación antes de que puedas finalizar tu calificación.']);
+        }
+
+        $evaluation->update(['evaluator_submitted_at' => now()]);
+        $evaluation->calculateScores();
+
+        // Notificar al empleado que el jefe finalizó su calificación
+        $this->notify(
+            $evaluation->employee_id,
+            $evaluation->id,
+            'evaluator_submitted',
+            'Tu jefe finalizó tu evaluación',
+            "{$user->name} ha finalizado la calificación de tu evaluación \"{$evaluation->template->name}\"."
+        );
+
+        return back()->with('success', 'Calificación finalizada. Ya no podrás realizar cambios en las notas ni observaciones.');
     }
 
     public function complete(Request $request, Evaluation $evaluation)

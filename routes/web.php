@@ -61,6 +61,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/evaluations/{evaluation}/live', [EvaluationController::class, 'liveState'])->name('evaluations.live-state');
     Route::post('/evaluations/{evaluation}/responses',    [EvaluationController::class, 'saveResponses'])->name('evaluations.save-responses');
     Route::post('/evaluations/{evaluation}/observations', [EvaluationController::class, 'saveObservations'])->name('evaluations.save-observations');
+    Route::post('/evaluations/{evaluation}/submit-evaluator', [EvaluationController::class, 'submitEvaluator'])->name('evaluations.submit-evaluator');
 
     // AJAX individual score save (all auth users)
     Route::patch('/evaluations/{evaluation}/score/{criteria}', [EvaluationBuilderController::class, 'saveScore'])->name('evaluations.score.save');

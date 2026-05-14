@@ -11,9 +11,10 @@
     // isEvaluator: puede ver y editar columna "Calificación jefe"
     $isEvaluator = $user->isAdmin() || $isJefeEvaluatingEmployee;
     // Employee: locked once status is completada or revisada
-    // Evaluator: locked only when revisada
+    // Evaluator: locked when revisada OR when jefe has submitted their evaluation
     $isReadOnly  = ($isEmployee && in_array($evaluation->status, ['completada', 'revisada']))
-                || ($isEvaluator && $evaluation->status === 'revisada');
+                || ($isEvaluator && $evaluation->status === 'revisada')
+                || ($isJefeEvaluatingEmployee && $evaluation->evaluator_submitted_at !== null);
     $canBuild    = $evaluation->status !== 'revisada' && $user->isAdmin();
     $autoEvalComplete = $evaluation->hasCompletedAutoEvaluation();
     $responsesMap = $evaluation->responses->keyBy('criteria_id');
@@ -272,7 +273,8 @@
                 <h3 class="text-sm font-bold text-sky-800">📋 Califica el desempeño del empleado</h3>
                 <p class="text-xs text-sky-700 mt-1 leading-relaxed">
                     Selecciona una puntuación del <strong>1 al 5</strong> en la columna "Jefe" para cada criterio. Puedes agregar observaciones.
-                    Los cambios se guardan <strong>automáticamente</strong>. Al terminar, presiona <strong>"Completar evaluación"</strong>.
+                    Guarda tus avances con <strong>"Guardar borrador"</strong> y cuando termines, presiona <strong>"Finalizar y enviar calificación"</strong>.
+                    <span class="font-bold text-sky-800 block mt-1">⚠️ Una vez que finalices, no podrás modificar las calificaciones ni observaciones.</span>
                 </p>
                 @endif
             </div>
@@ -671,14 +673,51 @@
                 Guardar y finalizar evaluación
             </button>
             @else
-            <button type="submit"
-                    class="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-2xl transition-all shadow-lg shadow-blue-500/20 hover:shadow-xl hover:shadow-blue-500/30 text-sm hover:-translate-y-0.5 active:translate-y-0">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                Guardar calificaciones
-            </button>
+            <div class="flex items-center justify-end gap-3">
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-2xl transition-all text-sm border border-slate-200">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
+                    Guardar borrador
+                </button>
+            </div>
             @endif
         </div>
     </form>
+
+    {{-- Botón Finalizar calificación (jefe, solo cuando no ha finalizado aún) --}}
+    @if($isJefeEvaluatingEmployee && !$evaluation->evaluator_submitted_at && $autoEvalComplete)
+    <form method="POST" action="{{ route('evaluations.submit-evaluator', $evaluation) }}">
+        @csrf
+        <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div class="flex items-start gap-3">
+                <div class="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                    <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+                <div>
+                    <p class="text-sm font-bold text-emerald-800">¿Terminaste de calificar?</p>
+                    <p class="text-xs text-emerald-700 mt-0.5">Al finalizar, tus calificaciones y observaciones quedarán bloqueadas y no podrás modificarlas.</p>
+                </div>
+            </div>
+            <button type="submit"
+                    onclick="return confirm('⚠️ ¿Finalizar y enviar tu calificación?\n\nUna vez enviada, no podrás modificar las notas ni las observaciones. Asegúrate de haber revisado todo antes de continuar.')"
+                    class="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl transition-all shadow-lg shadow-emerald-500/20 text-sm whitespace-nowrap flex-shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                Finalizar y enviar calificación
+            </button>
+        </div>
+    </form>
+    @endif
+
+    {{-- Mensaje cuando el jefe ya finalizó --}}
+    @if($isJefeEvaluatingEmployee && $evaluation->evaluator_submitted_at)
+    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 flex items-center gap-3">
+        <svg class="w-6 h-6 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+        <div>
+            <p class="text-sm font-bold text-slate-700">Calificación enviada y bloqueada</p>
+            <p class="text-xs text-slate-500 mt-0.5">Finalizaste tu evaluación el {{ $evaluation->evaluator_submitted_at->format('d/m/Y \a \l\a\s H:i') }}. El área de RR.HH. la cerrará definitivamente.</p>
+        </div>
+    </div>
+    @endif
     @endif
 
     {{-- Observations --}}
