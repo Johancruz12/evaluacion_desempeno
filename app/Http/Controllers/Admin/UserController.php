@@ -81,7 +81,12 @@ class UserController extends Controller
         $col = $this->resolveColumns($headerRow);
 
         if (!isset($col['document_number'])) {
-            return response()->json(['error' => 'El archivo debe incluir una columna de cédula/documento.'], 422);
+            $detected = implode(', ', array_filter(array_map('strval', $headerRow)));
+            return response()->json([
+                'error' => 'El archivo debe incluir una columna de cédula/documento. ' .
+                           'Columnas detectadas: ' . ($detected ?: '(ninguna)') . '. ' .
+                           'Usa un encabezado como: Cédula, Documento, Número de documento, NIT o Identificación.',
+            ], 422);
         }
 
         // ═══ PHASE 1 — Parse rows into memory ═══
@@ -338,29 +343,66 @@ class UserController extends Controller
     {
         $headerMap = [];
         foreach ($headerRow as $c => $label) {
-            $headerMap[$this->normalize((string) $label)] = $c;
+            $key = $this->normalize((string) $label);
+            if ($key !== '') {
+                $headerMap[$key] = $c;
+            }
         }
 
         $aliases = [
-            'document_number' => ['cedula', 'cédula', 'documento', 'numero documento', 'nro documento', 'identificacion', 'identificación', 'usuario', 'login'],
-            'document_type'   => ['tipo documento', 'tipo_doc', 'tipo', 'doc', 'tipo doc'],
-            'first_name'      => ['nombres', 'nombre', 'primer nombre'],
-            'last_name'       => ['apellidos', 'apellido', 'primer apellido'],
-            'full_name'       => ['nombre completo', 'empleado', 'colaborador', 'apellido y nombres', 'apellidos y nombres', 'nombres y apellidos', 'apellido y nombre'],
-            'area'            => ['area', 'área', 'nombre area', 'nombre área'],
-            'position'        => ['cargo', 'puesto', 'posicion', 'posición'],
-            'is_active'       => ['activo', 'estado', 'status', 'habilitado'],
+            'document_number' => [
+                // Formas exactas comunes
+                'cedula', 'cedula de ciudadania', 'cedula ciudadania',
+                'documento', 'num documento', 'nro documento', 'numero documento',
+                'numero de documento', 'nro de documento',
+                'numero cedula', 'nro cedula', 'numero de cedula', 'nro de cedula',
+                'identificacion', 'numero identificacion', 'numero de identificacion',
+                'n documento', 'n cedula', 'n identificacion',
+                'nit', 'cc',
+                'usuario', 'login',
+                'codigo empleado', 'cod empleado', 'numero empleado',
+                'identificador', 'id empleado',
+            ],
+            'document_type'   => ['tipo documento', 'tipo doc', 'tipo_doc', 'tipo', 'doc', 'tipo de documento'],
+            'first_name'      => ['nombres', 'nombre', 'primer nombre', 'nombres propios'],
+            'last_name'       => ['apellidos', 'apellido', 'primer apellido', 'apellidos completos'],
+            'full_name'       => [
+                'nombre completo', 'empleado', 'colaborador',
+                'apellido y nombres', 'apellidos y nombres', 'nombres y apellidos',
+                'apellido y nombre', 'nombre del empleado', 'nombre colaborador',
+            ],
+            'area'            => ['area', 'nombre area', 'dependencia', 'departamento', 'unidad', 'proceso'],
+            'position'        => ['cargo', 'puesto', 'posicion', 'puesto de trabajo', 'nombre cargo'],
+            'is_active'       => ['activo', 'estado', 'status', 'habilitado', 'activo inactivo'],
         ];
 
         $col = [];
         foreach ($aliases as $key => $candidates) {
-            foreach ($candidates as $c) {
-                if (isset($headerMap[$this->normalize($c)])) {
-                    $col[$key] = $headerMap[$this->normalize($c)];
+            foreach ($candidates as $candidate) {
+                $normalized = $this->normalize($candidate);
+                if (isset($headerMap[$normalized])) {
+                    $col[$key] = $headerMap[$normalized];
                     break;
                 }
             }
         }
+
+        // Fallback: coincidencia parcial para columnas críticas no resueltas por alias exacto
+        if (!isset($col['document_number'])) {
+            $keywords = ['cedula', 'documento', 'identif', 'nit'];
+            foreach ($headerMap as $normalizedHeader => $colRef) {
+                foreach ($keywords as $kw) {
+                    if (str_contains($normalizedHeader, $kw)) {
+                        // Evitar que coincida con columnas ya asignadas
+                        if (!in_array($colRef, $col, true)) {
+                            $col['document_number'] = $colRef;
+                            break 2;
+                        }
+                    }
+                }
+            }
+        }
+
         return $col;
     }
 

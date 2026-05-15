@@ -122,7 +122,9 @@
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
                             Configurar
                         </a>
-                        <form method="POST" action="{{ route('admin.templates.destroy', $t) }}" onsubmit="return confirm('⚠️ ¿Eliminar la plantilla «{{ $t->name }}»?\n\nSe perderán todas sus secciones, criterios y rangos configurados. Esta acción no se puede deshacer.')">
+                        <form method="POST" action="{{ route('admin.templates.destroy', $t) }}"
+                              data-confirm-title="¿Eliminar plantilla?"
+                              data-confirm="Se perderán todas las secciones, criterios y rangos de '{{ $t->name }}'. Esta acción no se puede deshacer.">
                             @csrf @method('DELETE')
                             <button type="submit" class="w-10 h-10 rounded-xl bg-rose-100 hover:bg-rose-600 text-rose-600 hover:text-white flex items-center justify-center transition-all duration-200 border border-rose-200 hover:border-rose-600">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -153,7 +155,7 @@
     <div x-show="openModal" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
          x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
          class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" @keydown.escape.window="openModal = false">
-        <div @click.outside="openModal = false"
+        <div @click.outside="if (!$event.target.closest('#area-selector-panel')) openModal = false"
              x-show="openModal" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 scale-90 translate-y-4" x-transition:enter-end="opacity-100 scale-100 translate-y-0"
              x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-90"
              class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col">
@@ -185,109 +187,170 @@
                     <template x-for="area in selectedAreas" :key="area.id">
                         <input type="hidden" name="area_ids[]" :value="area.id">
                     </template>
-                    
-                    <div class="flex items-center justify-between mb-3">
-                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider">Áreas asignadas</label>
-                        <div class="flex items-center gap-2">
-                            <button type="button" @click="selectAll()" class="text-xs text-blue-600 hover:text-blue-700 font-semibold px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-all border border-transparent hover:border-blue-200">
-                                <svg class="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                                Todas
-                            </button>
-                            <button type="button" @click="clearAll()" class="text-xs text-slate-600 hover:text-slate-800 font-semibold px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-all border border-transparent hover:border-slate-200">
-                                <svg class="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                                Ninguna
+
+                    {{-- Resumen compacto + botón abrir --}}
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                                <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5"/></svg>
+                                Áreas asignadas
+                            </label>
+                        </div>
+                        <div class="flex items-center gap-3 p-4 border-2 border-slate-200 rounded-2xl bg-slate-50 hover:border-blue-300 transition-colors">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 mb-1.5">
+                                    <span class="px-2.5 py-0.5 rounded-full text-xs font-bold"
+                                          :class="selectedAreas.length > 0 ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500'"
+                                          x-text="selectedAreas.length > 0 ? selectedAreas.length + ' seleccionada' + (selectedAreas.length !== 1 ? 's' : '') : 'Ninguna (global)'"></span>
+                                </div>
+                                <div class="flex flex-wrap gap-1 min-h-[18px]">
+                                    <template x-if="selectedAreas.length === 0">
+                                        <span class="text-xs text-slate-400 italic">Sin restricción — visible para todas las áreas</span>
+                                    </template>
+                                    <template x-for="area in selectedAreas.slice(0,5)" :key="area.id">
+                                        <span class="inline-flex items-center px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-[11px] font-medium border border-blue-200" x-text="area.name"></span>
+                                    </template>
+                                    <template x-if="selectedAreas.length > 5">
+                                        <span class="inline-flex items-center px-2 py-0.5 bg-slate-200 text-slate-600 rounded-md text-[11px] font-semibold" x-text="'+' + (selectedAreas.length - 5) + ' más'"></span>
+                                    </template>
+                                </div>
+                            </div>
+                            <button type="button" @click="panelOpen = true; $nextTick(() => $refs.areaSearch && $refs.areaSearch.focus())"
+                                    class="flex-shrink-0 inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-xl transition-all shadow-sm">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                Seleccionar
                             </button>
                         </div>
-                    </div>
-                    
-                    {{-- Input principal del multiselect --}}
-                    <div @click="open = !open" class="relative cursor-pointer">
-                        <div class="min-h-[3rem] w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl bg-white hover:border-blue-400 hover:shadow-md transition-all flex flex-wrap items-center gap-2 shadow-sm">
-                            <template x-if="selectedAreas.length === 0">
-                                <span class="text-sm text-slate-400 py-1 font-medium">Selecciona las áreas...</span>
-                            </template>
-                            <template x-for="area in selectedAreas" :key="area.id">
-                                <span x-transition:enter="transition ease-out duration-200"
-                                      x-transition:enter-start="opacity-0 scale-75"
-                                      x-transition:enter-end="opacity-100 scale-100"
-                                      class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-100 to-blue-50 text-blue-700 rounded-lg text-xs font-bold border border-blue-200 shadow-sm hover:shadow-md transition-all">
-                                    <span x-text="area.name"></span>
-                                    <button type="button" @click.stop="toggleArea(area)" class="hover:bg-blue-200 rounded-full p-0.5 transition-all hover:scale-110">
-                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
-                                    </button>
-                                </span>
-                            </template>
-                            <div class="flex-1 min-w-[60px]"></div>
-                            <svg class="w-5 h-5 text-slate-400 flex-shrink-0 transition-transform" :class="{'rotate-180': open}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                        </div>
+                        <p class="text-xs text-slate-500 mt-2 flex items-center gap-1.5 bg-blue-50 px-3 py-2 rounded-xl border border-blue-100">
+                            <svg class="w-3.5 h-3.5 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            <span class="text-blue-700 font-medium">Si no seleccionas ningún área, la plantilla será global para todos</span>
+                        </p>
                     </div>
 
-                    {{-- Dropdown con búsqueda --}}
-                    <div x-show="open" 
+                    {{-- Panel pantalla completa (teleportado al body para evitar stacking context del layout) --}}
+                    <template x-teleport="body">
+                    <div id="area-selector-panel" x-show="panelOpen" x-cloak
                          x-transition:enter="transition ease-out duration-200"
-                         x-transition:enter-start="opacity-0 scale-95"
-                         x-transition:enter-end="opacity-100 scale-100"
+                         x-transition:enter-start="opacity-0"
+                         x-transition:enter-end="opacity-100"
                          x-transition:leave="transition ease-in duration-150"
-                         x-transition:leave-start="opacity-100 scale-100"
-                         x-transition:leave-end="opacity-0 scale-95"
-                         @click.outside="open = false"
-                         class="absolute z-50 w-full mt-2 bg-white border-2 border-slate-200 rounded-xl shadow-2xl overflow-hidden">
-                        
-                        {{-- Búsqueda --}}
-                        <div class="p-4 border-b-2 border-slate-100 bg-slate-50">
-                            <div class="relative">
-                                <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                                <input type="text"
-                                       x-model="searchQuery"
-                                       @click.stop
-                                       placeholder="Buscar área por nombre..."
-                                       class="w-full pl-11 pr-4 py-2.5 border-2 border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white">
-                                <button type="button" x-show="searchQuery" @click.stop="searchQuery = ''" class="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-slate-200 hover:bg-slate-300 flex items-center justify-center text-slate-600 transition-all">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                         x-transition:leave-start="opacity-100"
+                         x-transition:leave-end="opacity-0"
+                         class="flex flex-col bg-white"
+                         style="position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;display:none;">
+
+                        {{-- Barra superior --}}
+                        <div class="flex-shrink-0 bg-gradient-to-r from-blue-600 to-sky-500 px-6 py-4 flex items-center justify-between shadow-lg">
+                            <div class="flex items-center gap-4">
+                                <div class="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5"/></svg>
+                                </div>
+                                <div>
+                                    <h2 class="text-lg font-bold text-white">Seleccionar Áreas</h2>
+                                    <p class="text-blue-100 text-xs">
+                                        <span class="font-semibold" x-text="selectedAreas.length"></span> de
+                                        <span class="font-semibold" x-text="areas.length"></span> áreas seleccionadas
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <button type="button" @click="selectAll()"
+                                        class="inline-flex items-center gap-1.5 px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-sm font-semibold rounded-xl transition-all border border-white/30">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                    Seleccionar todas
+                                </button>
+                                <button type="button" @click="clearAll()"
+                                        class="inline-flex items-center gap-1.5 px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-sm font-semibold rounded-xl transition-all border border-white/20">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                    Limpiar
+                                </button>
+                                <button type="button" @click="panelOpen = false; searchQuery = ''"
+                                        class="w-10 h-10 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center text-white border border-white/30 transition-all">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                                 </button>
                             </div>
                         </div>
 
-                        {{-- Lista de áreas en grid 2 columnas --}}
-                        <div class="max-h-96 overflow-y-auto p-3" style="scrollbar-width: thin;">
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <template x-for="area in filteredAreas" :key="area.id">
-                                    <label class="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-all group border-2"
-                                           :class="isSelected(area) ? 'bg-blue-50 border-blue-300 shadow-sm' : 'border-transparent hover:bg-slate-50 hover:border-slate-200'">
-                                        <input type="checkbox"
-                                               :value="area.id"
-                                               :checked="isSelected(area)"
-                                               @change="toggleArea(area)"
-                                               class="w-4.5 h-4.5 rounded text-blue-600 border-2 border-slate-300 focus:ring-2 focus:ring-blue-500 cursor-pointer transition-all flex-shrink-0">
-                                        <span class="text-sm font-medium text-slate-700 group-hover:text-blue-700 transition-colors flex-1 truncate" :title="area.name" x-text="area.name"></span>
-                                        <svg x-show="isSelected(area)" class="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                                    </label>
-                                </template>
+                        {{-- Buscador --}}
+                        <div class="flex-shrink-0 px-6 py-4 bg-slate-50 border-b border-slate-200">
+                            <div class="relative max-w-2xl">
+                                <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                                <input type="text" x-model="searchQuery" x-ref="areaSearch"
+                                       placeholder="Buscar área por nombre..."
+                                       class="w-full pl-12 pr-10 py-3.5 border-2 border-slate-200 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm placeholder:text-slate-400 text-slate-800">
+                                <button type="button" x-show="searchQuery" @click="searchQuery = ''"
+                                        class="absolute right-4 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-slate-200 hover:bg-slate-300 flex items-center justify-center text-slate-500">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
                             </div>
+                            <p class="text-xs text-slate-400 mt-2 pl-1">
+                                Mostrando <span class="font-semibold text-slate-600" x-text="filteredAreas.length"></span>
+                                de <span class="font-semibold text-slate-600" x-text="areas.length"></span> áreas
+                            </p>
+                        </div>
+
+                        {{-- Grid de áreas --}}
+                        <div class="flex-1 overflow-y-auto px-6 py-5" style="scrollbar-width: thin;">
+                            <template x-if="filteredAreas.length > 0">
+                                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5">
+                                    <template x-for="area in filteredAreas" :key="area.id">
+                                        <label @click="toggleArea(area)"
+                                               class="flex items-center gap-3 px-4 py-3.5 rounded-2xl cursor-pointer transition-all group border-2 select-none"
+                                               :class="isSelected(area)
+                                                   ? 'bg-blue-50 border-blue-500 shadow-sm shadow-blue-100'
+                                                   : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 hover:shadow-sm'">
+                                            <div class="w-5 h-5 rounded-md flex-shrink-0 border-2 flex items-center justify-center transition-all"
+                                                 :class="isSelected(area) ? 'bg-blue-600 border-blue-600' : 'border-slate-300 bg-white group-hover:border-blue-400'">
+                                                <svg x-show="isSelected(area)" class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                                            </div>
+                                            <span class="text-sm font-medium flex-1 leading-tight transition-colors"
+                                                  :class="isSelected(area) ? 'text-blue-700' : 'text-slate-700 group-hover:text-blue-700'"
+                                                  x-text="area.name"></span>
+                                        </label>
+                                    </template>
+                                </div>
+                            </template>
                             <template x-if="filteredAreas.length === 0">
-                                <div class="px-4 py-12 text-center text-slate-400">
-                                    <svg class="w-14 h-14 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                                    <p class="text-sm font-semibold text-slate-500">No se encontraron áreas</p>
-                                    <p class="text-xs text-slate-400 mt-1">Intenta con otro término de búsqueda</p>
+                                <div class="flex flex-col items-center justify-center h-full py-24 text-slate-400">
+                                    <svg class="w-16 h-16 mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                                    <p class="text-lg font-semibold text-slate-500">Sin resultados</p>
+                                    <p class="text-sm mt-1">Intenta con otro término</p>
                                 </div>
                             </template>
                         </div>
 
-                        {{-- Footer con contador --}}
-                        <div class="px-4 py-3 bg-slate-50 border-t-2 border-slate-100 flex items-center justify-between">
-                            <span class="text-xs font-semibold text-slate-600">
-                                <span x-text="selectedAreas.length"></span> de <span x-text="areas.length"></span> seleccionadas
-                            </span>
-                            <button type="button" @click="open = false" class="text-xs font-semibold text-blue-600 hover:text-blue-700 px-3 py-1.5 hover:bg-blue-50 rounded-lg transition-all">
-                                Cerrar
-                            </button>
+                        {{-- Pie --}}
+                        <div class="flex-shrink-0 border-t-2 border-slate-100 bg-white px-6 py-4">
+                            <div class="flex items-start gap-4">
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                                        <span x-text="selectedAreas.length > 0 ? 'Seleccionadas' : 'Sin restricción de área'"></span>
+                                    </p>
+                                    <div class="flex flex-wrap gap-1.5 max-h-16 overflow-y-auto" style="scrollbar-width: thin;">
+                                        <template x-if="selectedAreas.length === 0">
+                                            <span class="text-sm text-slate-400 italic">La plantilla será visible para todas las áreas</span>
+                                        </template>
+                                        <template x-for="area in selectedAreas" :key="area.id">
+                                            <span x-transition:enter="transition ease-out duration-100" x-transition:enter-start="opacity-0 scale-75" x-transition:enter-end="opacity-100 scale-100"
+                                                  class="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold border border-blue-200">
+                                                <span x-text="area.name"></span>
+                                                <button type="button" @click.stop="toggleArea(area)"
+                                                        class="w-4 h-4 rounded-full bg-blue-200 hover:bg-blue-500 hover:text-white flex items-center justify-center transition-all">
+                                                    <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"/></svg>
+                                                </button>
+                                            </span>
+                                        </template>
+                                    </div>
+                                </div>
+                                <button type="button" @click="panelOpen = false; searchQuery = ''"
+                                        class="flex-shrink-0 inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-2xl transition-all shadow-md text-sm">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                    Confirmar selección
+                                </button>
+                            </div>
                         </div>
                     </div>
-
-                    <p class="text-xs text-slate-500 mt-2 flex items-center gap-1.5 bg-blue-50 px-3 py-2 rounded-lg border border-blue-100">
-                        <svg class="w-3.5 h-3.5 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        <span class="text-blue-700 font-medium">Si no seleccionas ningún área, la plantilla será global para todos</span>
-                    </p>
+                    </template>
                 </div>
             </form>
             <div class="flex justify-end gap-3 px-6 py-4 border-t-2 border-slate-100 bg-slate-50">
@@ -354,7 +417,7 @@ function templatesPage() {
 
 function areaSelector() {
     return {
-        open: false,
+        panelOpen: false,
         searchQuery: '',
         selectedAreas: [],
         areas: @json($areas->map(fn($a) => ['id' => $a->id, 'name' => $a->name])->values()),

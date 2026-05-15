@@ -81,6 +81,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/evaluations/{evaluation}/complete',  [EvaluationController::class, 'complete'])->name('evaluations.complete');
     Route::post('/evaluations/{evaluation}/reopen',    [EvaluationController::class, 'reopen'])->name('evaluations.reopen');
     Route::patch('/evaluations/bulk-reset',            [EvaluationController::class, 'resetBulk'])->name('evaluations.bulk-reset');
+    Route::get('/evaluations/preview',                 [EvaluationController::class, 'preview'])->name('evaluations.preview');
 
     // Notifications
     Route::get('/notifications',                       [NotificationController::class, 'index'])->name('notifications.index');

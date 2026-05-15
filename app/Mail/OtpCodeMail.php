@@ -17,6 +17,7 @@ class OtpCodeMail extends Mailable
     public function build()
     {
         return $this->subject('Código de verificación — JUnical')
+            ->view('emails.otp-code')
             ->text('emails.otp-code-plain');
     }
 }

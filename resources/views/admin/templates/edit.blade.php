@@ -65,31 +65,227 @@ $totalMaxScore = $template->sections->sum(fn($s) => $s->criteria->sum('max_score
                 </div>
 
                 {{-- Areas --}}
-                <div>
-                    <div class="flex items-center justify-between mb-2">
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider">Áreas asignadas</label>
-                        <div class="flex items-center gap-1">
-                            <button type="button" onclick="document.querySelectorAll('.edit-area-cb').forEach(cb=>cb.checked=true)" class="text-[11px] text-blue-600 hover:text-blue-700 font-semibold px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors">Todas</button>
-                            <span class="text-slate-300 text-xs">|</span>
-                            <button type="button" onclick="document.querySelectorAll('.edit-area-cb').forEach(cb=>cb.checked=false)" class="text-[11px] text-slate-500 hover:text-slate-700 font-semibold px-2 py-1 rounded-lg hover:bg-slate-50 transition-colors">Ninguna</button>
+                <div x-data="{
+                    open: false,
+                    searchQuery: '',
+                    areas: {{ Js::from($areas->map(fn($a) => ['id' => $a->id, 'name' => $a->name, 'checked' => $template->areas->contains($a->id)])->values()) }},
+                    get filteredAreas() {
+                        if (!this.searchQuery) return this.areas;
+                        const q = this.searchQuery.toLowerCase();
+                        return this.areas.filter(a => a.name.toLowerCase().includes(q));
+                    },
+                    get selectedAreas() { return this.areas.filter(a => a.checked); },
+                    toggle(area) { area.checked = !area.checked; },
+                    selectAll() { this.areas.forEach(a => a.checked = true); },
+                    clearAll() { this.areas.forEach(a => a.checked = false); }
+                }">
+                    {{-- Hidden inputs para el formulario --}}
+                    <template x-for="area in selectedAreas" :key="area.id">
+                        <input type="hidden" name="area_ids[]" :value="area.id">
+                    </template>
+
+                    {{-- Resumen compacto + botón abrir --}}
+                    <div class="flex items-center justify-between gap-3 p-4 border-2 border-slate-200 rounded-2xl bg-slate-50 hover:border-blue-300 transition-colors">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-1.5">
+                                <svg class="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5"/></svg>
+                                <span class="text-xs font-bold text-slate-600 uppercase tracking-wider">Áreas asignadas</span>
+                                <span class="px-2.5 py-0.5 rounded-full text-xs font-bold"
+                                      :class="selectedAreas.length > 0 ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500'"
+                                      x-text="selectedAreas.length > 0 ? selectedAreas.length + ' seleccionada' + (selectedAreas.length !== 1 ? 's' : '') : 'Ninguna (global)'"></span>
+                            </div>
+                            {{-- Chips preview --}}
+                            <div class="flex flex-wrap gap-1 min-h-[20px]">
+                                <template x-if="selectedAreas.length === 0">
+                                    <span class="text-xs text-slate-400 italic">Sin restricción — visible para todas las áreas</span>
+                                </template>
+                                <template x-for="area in selectedAreas.slice(0,6)" :key="area.id">
+                                    <span class="inline-flex items-center px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-[11px] font-medium border border-blue-200" x-text="area.name"></span>
+                                </template>
+                                <template x-if="selectedAreas.length > 6">
+                                    <span class="inline-flex items-center px-2 py-0.5 bg-slate-200 text-slate-600 rounded-md text-[11px] font-semibold" x-text="'+' + (selectedAreas.length - 6) + ' más'"></span>
+                                </template>
+                            </div>
+                        </div>
+                        <button type="button" @click="open = true; $nextTick(() => $refs.areaSearch.focus())"
+                                class="flex-shrink-0 inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-xl transition-all shadow-sm hover:shadow-blue-400/30 hover:shadow-md">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                            Gestionar áreas
+                        </button>
+                    </div>
+
+                    {{-- Modal pantalla completa (teleportado al body para evitar stacking context del layout) --}}
+                    <template x-teleport="body">
+                    <div x-show="open" x-cloak
+                         x-transition:enter="transition ease-out duration-200"
+                         x-transition:enter-start="opacity-0"
+                         x-transition:enter-end="opacity-100"
+                         x-transition:leave="transition ease-in duration-150"
+                         x-transition:leave-start="opacity-100"
+                         x-transition:leave-end="opacity-0"
+                         class="flex flex-col bg-white"
+                         style="position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;display:none;">
+
+                        {{-- Barra superior --}}
+                        <div class="flex-shrink-0 bg-gradient-to-r from-blue-600 to-sky-500 px-6 py-4 flex items-center justify-between shadow-lg">
+                            <div class="flex items-center gap-4">
+                                <div class="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5"/></svg>
+                                </div>
+                                <div>
+                                    <h2 class="text-lg font-bold text-white">Seleccionar Áreas</h2>
+                                    <p class="text-blue-100 text-xs">
+                                        <span class="font-semibold" x-text="selectedAreas.length"></span> de
+                                        <span class="font-semibold" x-text="areas.length"></span> áreas seleccionadas
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <button type="button" @click="selectAll()"
+                                        class="inline-flex items-center gap-1.5 px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-sm font-semibold rounded-xl transition-all border border-white/30">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                    Seleccionar todas
+                                </button>
+                                <button type="button" @click="clearAll()"
+                                        class="inline-flex items-center gap-1.5 px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-sm font-semibold rounded-xl transition-all border border-white/20">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                    Limpiar
+                                </button>
+                                <button type="button" @click="open = false; searchQuery = ''"
+                                        class="w-10 h-10 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center text-white border border-white/30 transition-all">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        {{-- Buscador --}}
+                        <div class="flex-shrink-0 px-6 py-4 bg-slate-50 border-b border-slate-200">
+                            <div class="relative max-w-2xl">
+                                <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                                <input type="text" x-model="searchQuery" x-ref="areaSearch"
+                                       placeholder="Buscar área por nombre..."
+                                       class="w-full pl-12 pr-10 py-3.5 border-2 border-slate-200 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm placeholder:text-slate-400 text-slate-800">
+                                <button type="button" x-show="searchQuery" @click="searchQuery = ''"
+                                        class="absolute right-4 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-slate-200 hover:bg-slate-300 flex items-center justify-center text-slate-500">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-2 pl-1">
+                                Mostrando <span class="font-semibold text-slate-600" x-text="filteredAreas.length"></span>
+                                de <span class="font-semibold text-slate-600" x-text="areas.length"></span> áreas
+                                <template x-if="searchQuery">
+                                    <span> · coincidentes con "<span class="text-blue-600 font-semibold" x-text="searchQuery"></span>"</span>
+                                </template>
+                            </p>
+                        </div>
+
+                        {{-- Grid de áreas --}}
+                        <div class="flex-1 overflow-y-auto px-6 py-5" style="scrollbar-width: thin;">
+                            <template x-if="filteredAreas.length > 0">
+                                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5">
+                                    <template x-for="area in filteredAreas" :key="area.id">
+                                        <label @click="toggle(area)"
+                                               class="flex items-center gap-3 px-4 py-3.5 rounded-2xl cursor-pointer transition-all group border-2 select-none"
+                                               :class="area.checked
+                                                   ? 'bg-blue-50 border-blue-500 shadow-sm shadow-blue-100'
+                                                   : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 hover:shadow-sm'">
+                                            <div class="w-5 h-5 rounded-md flex-shrink-0 border-2 flex items-center justify-center transition-all"
+                                                 :class="area.checked ? 'bg-blue-600 border-blue-600' : 'border-slate-300 bg-white group-hover:border-blue-400'">
+                                                <svg x-show="area.checked" class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                                            </div>
+                                            <span class="text-sm font-medium flex-1 leading-tight transition-colors"
+                                                  :class="area.checked ? 'text-blue-700' : 'text-slate-700 group-hover:text-blue-700'"
+                                                  x-text="area.name"></span>
+                                        </label>
+                                    </template>
+                                </div>
+                            </template>
+                            <template x-if="filteredAreas.length === 0">
+                                <div class="flex flex-col items-center justify-center h-full py-24 text-slate-400">
+                                    <svg class="w-16 h-16 mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                                    <p class="text-lg font-semibold text-slate-500">Sin resultados</p>
+                                    <p class="text-sm mt-1">No hay áreas que coincidan con "<span class="text-blue-500 font-medium" x-text="searchQuery"></span>"</p>
+                                </div>
+                            </template>
+                        </div>
+
+                        {{-- Pie: chips de seleccionadas + confirmar --}}
+                        <div class="flex-shrink-0 border-t-2 border-slate-100 bg-white px-6 py-4">
+                            <div class="flex items-start gap-4">
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                                        <span x-text="selectedAreas.length > 0 ? 'Seleccionadas' : 'Sin restricción de área'"></span>
+                                    </p>
+                                    <div class="flex flex-wrap gap-1.5 max-h-16 overflow-y-auto" style="scrollbar-width: thin;">
+                                        <template x-if="selectedAreas.length === 0">
+                                            <span class="text-sm text-slate-400 italic">La plantilla será visible para todas las áreas</span>
+                                        </template>
+                                        <template x-for="area in selectedAreas" :key="area.id">
+                                            <span x-transition:enter="transition ease-out duration-100" x-transition:enter-start="opacity-0 scale-75" x-transition:enter-end="opacity-100 scale-100"
+                                                  class="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold border border-blue-200">
+                                                <span x-text="area.name"></span>
+                                                <button type="button" @click.stop="toggle(area)"
+                                                        class="w-4 h-4 rounded-full bg-blue-200 hover:bg-blue-500 hover:text-white flex items-center justify-center transition-all">
+                                                    <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"/></svg>
+                                                </button>
+                                            </span>
+                                        </template>
+                                    </div>
+                                </div>
+                                <button type="button" @click="open = false; searchQuery = ''"
+                                        class="flex-shrink-0 inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-2xl transition-all shadow-md hover:shadow-blue-400/30 text-sm">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                    Confirmar selección
+                                </button>
+                            </div>
                         </div>
                     </div>
-                    <div class="flex flex-wrap gap-2 p-3 border border-slate-200 rounded-xl bg-slate-50/50 max-h-36 overflow-y-auto">
-                        @foreach($areas as $area)
-                        <label class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border cursor-pointer transition-all text-sm hover:shadow-sm
-                            {{ $template->areas->contains($area->id) ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-200' }}">
-                            <input type="checkbox" name="area_ids[]" value="{{ $area->id }}" class="edit-area-cb w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500"
-                                {{ $template->areas->contains($area->id) ? 'checked' : '' }}>
-                            <span>{{ $area->name }}</span>
-                        </label>
-                        @endforeach
+                    </template>
+                </div>
+
+                {{-- Instructions --}}
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
+                        Instrucciones del PDF
+                        <span class="text-[10px] font-normal text-slate-400 normal-case ml-1">— texto que aparece en la sección "1. INSTRUCCIONES"</span>
+                    </label>
+                    <textarea name="instructions" rows="5"
+                              placeholder="Escribe las instrucciones de la evaluación para el PDF…"
+                              class="w-full px-4 py-3 border border-slate-200 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-slate-50 focus:bg-white resize-y">{{ old('instructions', $template->instructions) }}</textarea>
+                    <p class="text-xs text-slate-400 mt-1">Cada línea en blanco genera un párrafo separado en el PDF.</p>
+                </div>
+
+                {{-- Score scale labels --}}
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-3">
+                        Escala de calificación (1 – 5)
+                        <span class="text-[10px] font-normal text-slate-400 normal-case ml-1">— descripción de cada nivel de puntuación en el PDF</span>
+                    </label>
+                    <div class="space-y-2">
+                        @php
+                            $scaleDefaults = [
+                                1 => 'Tiene deficiencias muy significativas en el cumplimiento',
+                                2 => 'Tiene algunas deficiencias en el cumplimiento',
+                                3 => 'Cumple',
+                                4 => 'Tiende a exceder el cumplimiento',
+                                5 => 'Excede frecuentemente de manera significativa el cumplimiento',
+                            ];
+                            $savedScale = $template->score_scale ?? [];
+                        @endphp
+                        @for($i = 1; $i <= 5; $i++)
+                        <div class="flex items-center gap-3">
+                            <span class="w-8 h-8 flex-shrink-0 rounded-lg bg-blue-600 text-white text-xs font-black flex items-center justify-center">{{ $i }}</span>
+                            <input type="text" name="score_scale[{{ $i }}]"
+                                   value="{{ old("score_scale.$i", $savedScale[$i] ?? $scaleDefaults[$i]) }}"
+                                   placeholder="{{ $scaleDefaults[$i] }}"
+                                   class="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-slate-50 focus:bg-white">
+                        </div>
+                        @endfor
                     </div>
-                    <p class="text-xs text-slate-400 mt-1.5">Sin áreas seleccionadas = plantilla global</p>
                 </div>
 
                 <div class="flex items-center justify-between pt-2 border-t border-slate-100">
                     <label class="flex items-center gap-3 cursor-pointer select-none">
-                        <input type="hidden" name="is_active" value="0">
                         <div class="relative">
                             <input type="checkbox" name="is_active" value="1" {{ $template->is_active ? 'checked' : '' }}
                                    class="sr-only peer" id="toggle-active">
@@ -162,7 +358,9 @@ $totalMaxScore = $template->sections->sum(fn($s) => $s->criteria->sum('max_score
                             class="w-8 h-8 rounded-xl hover:bg-blue-50 flex items-center justify-center text-slate-400 hover:text-blue-600 transition-all" title="Editar">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
                     </button>
-                    <form method="POST" action="{{ route('admin.sections.destroy', $section) }}" onsubmit="return confirm('⚠️ ¿Eliminar la sección «{{ $section->name }}»?\n\nSe eliminarán también todos sus criterios de evaluación. Esta acción no se puede deshacer.')">
+                    <form method="POST" action="{{ route('admin.sections.destroy', $section) }}"
+                          data-confirm-title="¿Eliminar sección?"
+                          data-confirm="Se eliminarán también todos los criterios de '{{ $section->name }}'. Esta acción no se puede deshacer.">
                         @csrf @method('DELETE')
                         <button type="submit" class="w-8 h-8 rounded-xl hover:bg-rose-50 flex items-center justify-center text-slate-400 hover:text-rose-600 transition-all" title="Eliminar">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -208,7 +406,9 @@ $totalMaxScore = $template->sections->sum(fn($s) => $s->criteria->sum('max_score
                                 class="w-7 h-7 rounded-lg hover:bg-blue-50 flex items-center justify-center text-slate-300 hover:text-blue-600 transition-all opacity-0 group-hover:opacity-100">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
                         </button>
-                        <form method="POST" action="{{ route('admin.criteria.destroy', $c) }}" onsubmit="return confirm('⚠️ ¿Eliminar el criterio «{{ $c->name }}»?\n\nEsta acción no se puede deshacer.')">
+                        <form method="POST" action="{{ route('admin.criteria.destroy', $c) }}"
+                              data-confirm-title="¿Eliminar criterio?"
+                              data-confirm="Se eliminará '{{ $c->name }}'. Esta acción no se puede deshacer.">
                             @csrf @method('DELETE')
                             <button type="submit" class="w-7 h-7 rounded-lg hover:bg-rose-50 flex items-center justify-center text-slate-300 hover:text-rose-600 transition-all opacity-0 group-hover:opacity-100">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -273,7 +473,9 @@ $totalMaxScore = $template->sections->sum(fn($s) => $s->criteria->sum('max_score
                         class="w-8 h-8 rounded-xl hover:bg-blue-50 flex items-center justify-center text-slate-300 group-hover:text-slate-500 hover:!text-blue-600 transition-all">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
                 </button>
-                <form method="POST" action="{{ route('admin.ranges.destroy', $range) }}" onsubmit="return confirm('⚠️ ¿Eliminar el rango «{{ $range->label }}»?\n\nEsta acción no se puede deshacer.')">
+                <form method="POST" action="{{ route('admin.ranges.destroy', $range) }}"
+                      data-confirm-title="¿Eliminar rango?"
+                      data-confirm="Se eliminará el rango '{{ $range->label }}'. Esta acción no se puede deshacer.">
                     @csrf @method('DELETE')
                     <button type="submit" class="w-8 h-8 rounded-xl hover:bg-rose-50 flex items-center justify-center text-slate-300 group-hover:text-slate-500 hover:!text-rose-600 transition-all">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>

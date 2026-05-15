@@ -97,7 +97,8 @@
                     </a>
                     @if(!$isSystem && $role->users_count === 0)
                     <form method="POST" action="{{ route('admin.roles.destroy', $role) }}"
-                          onsubmit="return confirm('¿Eliminar rol «{{ addslashes($role->description) }}»? Esta acción no se puede deshacer.');">
+                          data-confirm-title="¿Eliminar rol?"
+                          data-confirm="Se eliminará el rol '{{ $role->description }}'. Esta acción no se puede deshacer.">
                         @csrf @method('DELETE')
                         <button type="submit" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg>

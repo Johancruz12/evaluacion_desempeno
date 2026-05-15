@@ -5,7 +5,6 @@
 @php
 $user = auth()->user();
 $canCreate = $user->canCreateEvaluations();
-$canManageTemplates = $user->canEditEvaluationTemplates();
 $isJefe = $user->isJefeArea();
 $statusMap = [
     'pendiente'   => ['Pendiente',   'bg-amber-100 text-amber-700 border-amber-200'],
@@ -83,15 +82,7 @@ $countCompleted = $evaluations->whereIn('status', ['completada','revisada'])->co
         </button>
         @endif
 
-        @if($canManageTemplates)
-        <button @click="tab='plantillas'" :class="tab==='plantillas' ? 'bg-blue-500 text-white' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'" class="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300">
-            <span class="flex items-center gap-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6z"/></svg>
-                Plantillas
-                <span class="px-2 py-0.5 rounded-full text-xs font-bold" :class="tab==='plantillas' ? 'bg-white/25' : 'bg-blue-100 text-blue-700'">{{ $templatesManage->count() }}</span>
-            </span>
-        </button>
-        @endif
+
     </div>
 
     {{-- ═══════════════════════════════════════════════════════ --}}
@@ -295,6 +286,54 @@ $countCompleted = $evaluations->whereIn('status', ['completada','revisada'])->co
         </div>
         @endif
 
+        {{-- Master select-all bar (always visible when there are evaluations) --}}
+        @if($canCreate && $groupedEvaluations->isNotEmpty())
+        <div class="anim-fade-up bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-3">
+            <div class="flex items-center justify-between px-5 py-3">
+                <label class="flex items-center gap-3 cursor-pointer select-none">
+                    <input type="checkbox" class="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
+                           @change="
+                               const boxes = document.querySelectorAll('.eval-checkbox');
+                               if ($event.target.checked) {
+                                   selected = [...boxes].map(c => c.value);
+                                   boxes.forEach(c => c.checked = true);
+                               } else {
+                                   selected = [];
+                                   boxes.forEach(c => c.checked = false);
+                               }
+                           "
+                           :checked="selected.length > 0 && selected.length === document.querySelectorAll('.eval-checkbox').length">
+                    <div>
+                        <p class="text-sm font-bold text-slate-800">Seleccionar todas las evaluaciones</p>
+                        <p class="text-xs text-slate-500">
+                            <span x-text="selected.length"></span> de
+                            <span>{{ collect($groupedEvaluations)->sum(fn($t) => collect($t['areas'])->sum(fn($a) => $a['evaluations']->count())) }}</span>
+                            visibles seleccionadas
+                        </p>
+                    </div>
+                </label>
+                <div class="flex items-center gap-2">
+                    <button type="button"
+                            @click="
+                                const boxes = document.querySelectorAll('.eval-checkbox');
+                                selected = [...boxes].map(c => c.value);
+                                boxes.forEach(c => c.checked = true);
+                            "
+                            class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                        Marcar todas
+                    </button>
+                    <button type="button" x-show="selected.length > 0"
+                            @click="selected=[]; document.querySelectorAll('.eval-checkbox').forEach(c=>c.checked=false)"
+                            class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        Limpiar
+                    </button>
+                </div>
+            </div>
+        </div>
+        @endif
+
         {{-- Bulk action bar --}}
         @if($canCreate)
         <div x-show="selected.length > 0" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0" x-cloak
@@ -314,13 +353,24 @@ $countCompleted = $evaluations->whereIn('status', ['completada','revisada'])->co
                             class="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-100 rounded-xl transition-colors border border-slate-300 shadow-sm">
                         Cancelar
                     </button>
+                    {{-- Un solo input oculto llenado síncronamente al submit (evita el delay de Alpine x-for) --}}
                     <form method="POST" action="{{ route('evaluations.bulk-reset') }}" id="bulk-reset-form"
-                          onsubmit="return confirm('⚠️ ¿Reiniciar las evaluaciones seleccionadas?\n\nSe eliminarán todas las respuestas y calificaciones, y las evaluaciones volverán a estado pendiente. Los empleados deberán completarlas nuevamente.\n\nEsta acción no se puede deshacer.')">
+                          @submit.prevent="
+                              if (selected.length === 0) return;
+                              AppConfirm({
+                                  title: 'Reiniciar ' + selected.length + ' evaluaciones',
+                                  message: 'Se eliminarán todas las respuestas y calificaciones, y las evaluaciones volverán a estado pendiente. Esta acción no se puede deshacer.',
+                                  variant: 'warning',
+                                  confirmText: 'Sí, reiniciar'
+                              }).then(ok => {
+                                  if (!ok) return;
+                                  $refs.bulkIdsInput.value = selected.join(',');
+                                  $el.submit();
+                              });
+                          ">
                         @csrf
                         @method('PATCH')
-                        <template x-for="id in selected" :key="id">
-                            <input type="hidden" name="evaluation_ids[]" :value="id">
-                        </template>
+                        <input type="hidden" name="evaluation_ids_csv" x-ref="bulkIdsInput">
                         <button type="submit"
                                 class="btn-bounce inline-flex items-center gap-2 bg-amber-600 hover:bg-amber-500 text-white font-semibold px-5 py-2.5 rounded-xl transition-all text-sm border border-amber-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -392,7 +442,16 @@ $countCompleted = $evaluations->whereIn('status', ['completada','revisada'])->co
                                             {{ $ev->employee?->name ?? '—' }}
                                             @if($isOwn)<span class="text-indigo-500 text-xs font-bold">(Tú)</span>@endif
                                         </p>
-                                        <p class="text-xs text-slate-400">{{ $ev->period }} · {{ $ptLabel }}</p>
+                        <p class="text-xs text-slate-400">{{ $ev->period }} · {{ $ptLabel }}</p>
+                                        @if($ev->due_date)
+                                        @php
+                                            $isDuePast = $ev->due_date->isPast() && !in_array($ev->status, ['completada','cerrada','revisada']);
+                                            $isDueSoon = !$isDuePast && $ev->due_date->diffInDays(now()) <= 3;
+                                        @endphp
+                                        <p class="text-[10px] font-semibold mt-0.5 {{ $isDuePast ? 'text-rose-500' : ($isDueSoon ? 'text-amber-500' : 'text-slate-400') }}">
+                                            ⏰ Cierre: {{ $ev->due_date->format('d/m/Y') }}{{ $isDuePast ? ' — vencida' : '' }}
+                                        </p>
+                                        @endif
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-3 flex-shrink-0">
@@ -455,7 +514,23 @@ $countCompleted = $evaluations->whereIn('status', ['completada','revisada'])->co
                         </div>
                     </div>
 
-                    <form method="POST" action="{{ route('evaluations.store') }}" x-data="{selectedTpl: null, audience: 'todos', templates: {{ Js::from($templates->map(fn($t) => ['id' => $t->id, 'name' => $t->name, 'area_names' => $t->areas->pluck('name')->toArray(), 'is_global' => $t->areas->isEmpty(), 'sections_count' => $t->sections_count])) }}}" class="space-y-6">
+                    <form method="POST" action="{{ route('evaluations.store') }}" x-data="{
+                            selectedTpl: null,
+                            audience: '{{ $defaultAudience }}',
+                            templates: {{ Js::from($templates->map(fn($t) => ['id' => $t->id, 'name' => $t->name, 'area_names' => $t->areas->pluck('name')->toArray(), 'is_global' => $t->areas->isEmpty(), 'sections_count' => $t->sections_count])) }},
+                            preview: null,
+                            previewLoading: false,
+                            fetchPreview() {
+                                if (!this.selectedTpl) { this.preview = null; return; }
+                                this.previewLoading = true;
+                                const url = new URL('{{ route('evaluations.preview') }}', window.location.origin);
+                                url.searchParams.set('template_id', this.selectedTpl.id);
+                                url.searchParams.set('target_audience', this.audience);
+                                fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } })
+                                    .then(r => r.json()).then(data => { this.preview = data; this.previewLoading = false; })
+                                    .catch(() => { this.preview = null; this.previewLoading = false; });
+                            }
+                        }" x-init="$watch('selectedTpl', () => fetchPreview()); $watch('audience', () => fetchPreview())" class="space-y-6">
                         @csrf
 
                         {{-- Step 1: Template --}}
@@ -558,6 +633,37 @@ $countCompleted = $evaluations->whereIn('status', ['completada','revisada'])->co
                             </div>
                         </div>
 
+                        {{-- Preview: employee count --}}
+                        <div x-show="selectedTpl" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-3" x-transition:enter-end="opacity-100 translate-y-0">
+                            <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 flex items-start gap-3">
+                                <div class="w-8 h-8 rounded-lg bg-emerald-500 flex-shrink-0 flex items-center justify-center">
+                                    <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <template x-if="previewLoading">
+                                        <p class="text-sm text-emerald-700 animate-pulse">Calculando empleados…</p>
+                                    </template>
+                                    <template x-if="!previewLoading && preview !== null">
+                                        <div>
+                                            <p class="text-sm font-bold text-emerald-800">
+                                                Se asignará a <span x-text="preview.count"></span> empleado<span x-show="preview.count !== 1">s</span>
+                                                <span x-show="preview.areas && preview.areas.length > 0"> de <span x-text="preview.areas.length"></span> área<span x-show="preview.areas.length !== 1">s</span></span>
+                                            </p>
+                                            <div class="flex flex-wrap gap-1.5 mt-2" x-show="preview.areas && preview.areas.length > 0">
+                                                <template x-for="area in preview.areas" :key="area.name">
+                                                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                                        <span x-text="area.name"></span>
+                                                        <span class="font-bold" x-text="'(' + area.count + ')'"></span>
+                                                    </span>
+                                                </template>
+                                            </div>
+                                            <p x-show="preview.count === 0" class="text-xs text-amber-600 mt-1 font-medium">⚠ No hay empleados activos que coincidan con los criterios seleccionados.</p>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+
                         {{-- Step 3: Period --}}
                         <div x-show="selectedTpl" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-3" x-transition:enter-end="opacity-100 translate-y-0">
                             <div class="flex items-center gap-3 mb-3">
@@ -570,9 +676,9 @@ $countCompleted = $evaluations->whereIn('status', ['completada','revisada'])->co
                                     <select name="period_type" id="period-type" required onchange="updatePeriods()"
                                             class="w-full px-4 py-3 border border-slate-200 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-slate-50 focus:bg-white">
                                         <option value="">Tipo de período…</option>
-                                        <option value="trimestral" {{ old('period_type')=='trimestral'?'selected':'' }}>Trimestral</option>
-                                        <option value="semestral"  {{ old('period_type')=='semestral'?'selected':'' }}>Semestral</option>
-                                        <option value="anual"      {{ old('period_type')=='anual'?'selected':'' }}>Anual</option>
+                                        <option value="trimestral" {{ (old('period_type', $defaultPeriodType))=='trimestral'?'selected':'' }}>Trimestral</option>
+                                        <option value="semestral"  {{ (old('period_type', $defaultPeriodType))=='semestral'?'selected':'' }}>Semestral</option>
+                                        <option value="anual"      {{ (old('period_type', $defaultPeriodType))=='anual'?'selected':'' }}>Anual</option>
                                     </select>
                                 </div>
                                 <div>
@@ -589,10 +695,25 @@ $countCompleted = $evaluations->whereIn('status', ['completada','revisada'])->co
                         <div x-show="selectedTpl" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-3" x-transition:enter-end="opacity-100 translate-y-0">
                             <div class="flex items-center gap-3 mb-3">
                                 <div class="w-7 h-7 rounded-full bg-gradient-to-r from-slate-300 to-slate-400 flex items-center justify-center text-white text-xs font-bold">4</div>
-                                <label class="text-xs font-bold text-slate-600 uppercase tracking-wider">Fecha <span class="text-slate-400 font-normal">(opcional)</span></label>
+                                <label class="text-xs font-bold text-slate-600 uppercase tracking-wider">Fechas</label>
                             </div>
-                            <input type="date" name="evaluation_date" value="{{ old('evaluation_date', now()->toDateString()) }}"
-                                   class="w-full px-4 py-3 border border-slate-200 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-slate-50 focus:bg-white">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs text-slate-500 mb-1">Fecha de evaluación <span class="text-slate-400">(opcional)</span></label>
+                                    <input type="date" name="evaluation_date" value="{{ old('evaluation_date', now()->toDateString()) }}"
+                                           class="w-full px-4 py-3 border border-slate-200 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-slate-50 focus:bg-white">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-slate-500 mb-1">
+                                        Fecha límite de cierre
+                                        <span class="text-rose-400 font-semibold">*</span>
+                                    </label>
+                                    <input type="date" name="due_date" value="{{ old('due_date') }}" required
+                                           min="{{ now()->addDay()->toDateString() }}"
+                                           class="w-full px-4 py-3 border border-slate-200 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all bg-slate-50 focus:bg-white">
+                                    <p class="text-xs text-slate-400 mt-1">Al vencer esta fecha, la evaluación se cerrará automáticamente.</p>
+                                </div>
+                            </div>
                         </div>
 
                         {{-- Submit --}}
@@ -614,120 +735,6 @@ $countCompleted = $evaluations->whereIn('status', ['completada','revisada'])->co
     </div>
     @endif
 
-    {{-- ═══════════════════════════════════════════════════════ --}}
-    {{-- TAB: PLANTILLAS                                       --}}
-    {{-- ═══════════════════════════════════════════════════════ --}}
-    @if($canManageTemplates)
-    <div x-show="tab==='plantillas'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0">
-
-        <div class="flex items-center justify-between mb-4">
-            <p class="text-slate-500 text-sm font-medium">{{ $templatesManage->count() }} plantilla(s) disponibles</p>
-            <button onclick="document.getElementById('modal-new-template').classList.remove('hidden')"
-                    class="btn-bounce inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold px-5 py-2.5 rounded-xl transition-all text-sm">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                Nueva plantilla
-            </button>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            @forelse($templatesManage as $t)
-            <div class="anim-fade-up bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group">
-                <div class="h-1 bg-gradient-to-r {{ $t->is_active ? 'from-blue-400 via-sky-400 to-indigo-400' : 'from-slate-300 to-slate-200' }}"></div>
-                <div class="p-5">
-                    <div class="flex items-start justify-between mb-3">
-                        <div class="flex-1 min-w-0 pr-2">
-                            <h3 class="font-bold text-slate-800 text-sm leading-snug group-hover:text-blue-700 transition-colors">{{ $t->name }}</h3>
-                            @if($t->areas->count())
-                            <div class="flex flex-wrap gap-1 mt-1.5">
-                                @foreach($t->areas->take(2) as $area)
-                                <span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-600 border border-blue-200">{{ $area->name }}</span>
-                                @endforeach
-                                @if($t->areas->count() > 2)
-                                <span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-500">+{{ $t->areas->count() - 2 }}</span>
-                                @endif
-                            </div>
-                            @else
-                            <p class="text-xs text-blue-500 mt-1">Global — todas las áreas</p>
-                            @endif
-                        </div>
-                        <span class="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold flex-shrink-0 border {{ $t->is_active ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200' }}">
-                            {{ $t->is_active ? 'Activa' : 'Inactiva' }}
-                        </span>
-                    </div>
-                    <div class="flex gap-3 text-xs text-slate-400 mb-4 py-3 border-y border-slate-100">
-                        <span class="flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg><span class="font-semibold text-slate-600">{{ $t->sections_count }}</span> secciones</span>
-                        <span class="flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/></svg><span class="font-semibold text-slate-600">{{ $t->evaluations_count }}</span> evaluaciones</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <a href="{{ route('admin.templates.edit', $t) }}" class="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition-all border border-blue-600">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/></svg>
-                            Configurar
-                        </a>
-                        <form method="POST" action="{{ route('admin.templates.destroy', $t) }}" onsubmit="return confirm('⚠️ ¿Está seguro de eliminar la plantilla «{{ $t->name }}»?\n\nSe perderán todas sus secciones, criterios y rangos configurados. Esta acción no se puede deshacer.')">
-                            @csrf @method('DELETE')
-                            <button type="submit" class="w-9 h-9 rounded-xl bg-rose-100 hover:bg-rose-600 text-rose-600 hover:text-white flex items-center justify-center transition-all duration-200 border border-rose-200 hover:border-rose-600">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            </div>
-            @empty
-            <div class="col-span-full bg-white rounded-2xl border-2 border-dashed border-slate-200 py-16 text-center">
-                <p class="text-slate-700 font-bold text-base">Sin plantillas</p>
-                <p class="text-slate-400 text-sm mt-1">Crea tu primera plantilla de evaluación</p>
-            </div>
-            @endforelse
-        </div>
-    </div>
-
-    {{-- Modal: Nueva plantilla --}}
-    <div id="modal-new-template" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div class="bg-gradient-to-r from-blue-500 to-sky-500 px-6 py-4">
-                <div class="flex items-center justify-between">
-                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                        Nueva plantilla
-                    </h3>
-                    <button onclick="document.getElementById('modal-new-template').classList.add('hidden')" class="w-8 h-8 rounded-xl bg-slate-50 hover:bg-white flex items-center justify-center text-slate-700 transition-colors border border-white/60">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                    </button>
-                </div>
-            </div>
-            <form method="POST" action="{{ route('admin.templates.store') }}" class="p-6 space-y-4">
-                @csrf
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Nombre</label>
-                    <input type="text" name="name" required class="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 focus:bg-white">
-                </div>
-                <div>
-                    <div class="flex items-center justify-between mb-2">
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider">Áreas asignadas</label>
-                        <div class="flex items-center gap-1">
-                            <button type="button" onclick="document.querySelectorAll('.modal-tpl-area-cb').forEach(cb=>cb.checked=true)" class="text-[11px] text-blue-600 hover:text-blue-700 font-semibold px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors">Todas</button>
-                            <span class="text-slate-300 text-xs">|</span>
-                            <button type="button" onclick="document.querySelectorAll('.modal-tpl-area-cb').forEach(cb=>cb.checked=false)" class="text-[11px] text-slate-500 hover:text-slate-700 font-semibold px-2 py-1 rounded-lg hover:bg-slate-50 transition-colors">Ninguna</button>
-                        </div>
-                    </div>
-                    <div class="flex flex-wrap gap-2 p-3 border border-slate-200 rounded-xl bg-slate-50/50 max-h-40 overflow-y-auto">
-                        @foreach($areasForCreate as $area)
-                        <label class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border bg-white border-slate-200 text-slate-600 hover:border-blue-200 cursor-pointer transition-all text-sm hover:shadow-sm">
-                            <input type="checkbox" name="area_ids[]" value="{{ $area->id }}" class="modal-tpl-area-cb w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500">
-                            <span>{{ $area->name }}</span>
-                        </label>
-                        @endforeach
-                    </div>
-                    <p class="text-xs text-slate-400 mt-1.5">Las áreas seleccionadas aquí definen a quiénes se les asignará la evaluación. Sin áreas = global.</p>
-                </div>
-                <div class="flex justify-end gap-3 pt-2">
-                    <button type="button" onclick="document.getElementById('modal-new-template').classList.add('hidden')" class="px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
-                    <button type="submit" class="btn-bounce px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-xl transition-all">Crear y configurar</button>
-                </div>
-            </form>
-        </div>
-    </div>
-    @endif
 
 </div>
 

@@ -77,28 +77,91 @@
 
                 <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4 mt-6">
                     <h3 class="font-semibold text-slate-800">Permisos del rol</h3>
-                    <span class="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full" x-text="selected.length + ' seleccionado(s)'"></span>
+                    <span class="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full" x-text="selected.length + ' de {{ $permissions->count() }} seleccionado(s)'"></span>
                 </div>
 
                 <div class="flex items-center gap-3 mb-4 text-xs">
-                    <button type="button" @click="selected = [{{ $permissions->pluck('id')->implode(',') }}]"
-                            class="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium">Seleccionar todo</button>
+                    <button type="button" @click="selected = {{ json_encode($permissions->pluck('id')->values()->all()) }}"
+                            class="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold border border-blue-200">Seleccionar todo</button>
                     <button type="button" @click="selected = []"
-                            class="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium">Limpiar</button>
+                            class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium">Limpiar</button>
                 </div>
 
-                <div class="grid sm:grid-cols-2 gap-2">
-                    @foreach($permissions as $perm)
-                    <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/40 cursor-pointer transition-all"
-                           :class="selected.includes({{ $perm->id }}) ? 'border-blue-400 bg-blue-50' : ''">
-                        <input type="checkbox" name="permissions[]" value="{{ $perm->id }}"
-                               x-model="selected" :value="{{ $perm->id }}"
-                               class="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                        <div class="flex-1 min-w-0">
-                            <p class="text-sm font-medium text-slate-700">{{ $perm->description }}</p>
-                            <p class="text-xs text-slate-400 font-mono">{{ $perm->slug }}</p>
+                @php
+                    // Agrupar permisos por módulo (prefijo antes del primer punto)
+                    $grouped = $permissions->groupBy(function ($p) {
+                        return Str::before($p->slug, '.') ?: 'otros';
+                    });
+                    $moduleLabels = [
+                        'evaluations' => ['Evaluaciones', '📋', 'from-blue-500 to-sky-500'],
+                        'templates' => ['Plantillas', '📐', 'from-indigo-500 to-purple-500'],
+                        'section_types' => ['Tipos de sección', '🏷', 'from-violet-500 to-fuchsia-500'],
+                        'areas' => ['Áreas', '🏢', 'from-emerald-500 to-teal-500'],
+                        'positions' => ['Cargos', '💼', 'from-amber-500 to-orange-500'],
+                        'employees' => ['Empleados', '👥', 'from-cyan-500 to-blue-500'],
+                        'team' => ['Mi Equipo', '👨‍👩‍👧', 'from-pink-500 to-rose-500'],
+                        'reports' => ['Reportes', '📊', 'from-purple-500 to-indigo-500'],
+                        'settings' => ['Configuración', '⚙️', 'from-slate-500 to-slate-600'],
+                        'roles' => ['Roles y permisos', '🔐', 'from-rose-500 to-red-500'],
+                        'development_plans' => ['Planes de desarrollo', '🎯', 'from-lime-500 to-green-500'],
+                        'notifications' => ['Notificaciones', '🔔', 'from-yellow-500 to-amber-500'],
+                    ];
+                @endphp
+
+                <div class="space-y-4">
+                    @foreach($grouped as $module => $perms)
+                        @php
+                            [$label, $icon, $grad] = $moduleLabels[$module] ?? [ucfirst($module), '📌', 'from-slate-400 to-slate-500'];
+                            $modulePermIds = $perms->pluck('id')->values()->all();
+                            $modulePermJson = json_encode($modulePermIds);
+                        @endphp
+                        <div x-data="{
+                            get moduleIds() { return {{ $modulePermJson }}; },
+                            get moduleSelectedCount() { return this.moduleIds.filter(id => selected.includes(id)).length; },
+                            get allSelected() { return this.moduleSelectedCount === this.moduleIds.length; },
+                            toggleModule() {
+                                if (this.allSelected) {
+                                    selected = selected.filter(id => !this.moduleIds.includes(id));
+                                } else {
+                                    const merged = new Set([...selected, ...this.moduleIds]);
+                                    selected = [...merged];
+                                }
+                            }
+                        }" class="border-2 border-slate-200 rounded-2xl overflow-hidden">
+                            {{-- Cabecera del módulo --}}
+                            <div class="flex items-center justify-between px-4 py-3 bg-gradient-to-r {{ $grad }}">
+                                <div class="flex items-center gap-3">
+                                    <span class="w-9 h-9 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center text-lg">{{ $icon }}</span>
+                                    <div>
+                                        <p class="text-white font-bold text-sm leading-tight">{{ $label }}</p>
+                                        <p class="text-white/80 text-xs">
+                                            <span x-text="moduleSelectedCount"></span> de {{ $perms->count() }} activos
+                                        </p>
+                                    </div>
+                                </div>
+                                <button type="button" @click="toggleModule()"
+                                        :class="allSelected ? 'bg-white/30 hover:bg-white/40' : 'bg-white text-slate-700 hover:bg-slate-50'"
+                                        class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all">
+                                    <span x-show="allSelected" class="text-white">Quitar todos</span>
+                                    <span x-show="!allSelected">Activar todos</span>
+                                </button>
+                            </div>
+                            {{-- Permisos individuales --}}
+                            <div class="grid sm:grid-cols-2 gap-2 p-3 bg-slate-50/50">
+                                @foreach($perms as $perm)
+                                <label class="flex items-start gap-3 p-3 rounded-xl border bg-white cursor-pointer transition-all"
+                                       :class="selected.includes({{ $perm->id }}) ? 'border-blue-400 ring-2 ring-blue-100 shadow-sm' : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50/40'">
+                                    <input type="checkbox" name="permissions[]" value="{{ $perm->id }}"
+                                           x-model.number="selected" :value="{{ $perm->id }}"
+                                           class="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-sm font-semibold text-slate-700">{{ $perm->description }}</p>
+                                        <p class="text-[10px] text-slate-400 font-mono mt-0.5">{{ $perm->slug }}</p>
+                                    </div>
+                                </label>
+                                @endforeach
+                            </div>
                         </div>
-                    </label>
                     @endforeach
                 </div>
 
@@ -178,7 +241,8 @@
                             </p>
                         </div>
                         <form method="POST" action="{{ route('admin.roles.users.detach', [$role, $u]) }}"
-                              onsubmit="return confirm('¿Quitar este rol al usuario {{ addslashes(($u->person?->first_name ?? '') . ' ' . ($u->person?->last_name ?? '')) }}?');">
+                              data-confirm-title="¿Quitar rol?"
+                              data-confirm="Se quitará este rol a {{ ($u->person?->first_name ?? '') . ' ' . ($u->person?->last_name ?? '') }}.">
                             @csrf @method('DELETE')
                             <button type="submit" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>

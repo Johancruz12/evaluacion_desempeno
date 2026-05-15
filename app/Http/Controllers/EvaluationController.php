@@ -11,6 +11,7 @@ use App\Models\EvaluationTemplate;
 use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class EvaluationController extends Controller
 {
@@ -76,14 +77,6 @@ class EvaluationController extends Controller
                 ->get();
         }
 
-        // Templates for management (only for authorized users)
-        $templatesManage = collect();
-        if ($user->canEditEvaluationTemplates()) {
-            $templatesManage = EvaluationTemplate::with('areas')
-                ->withCount(['sections', 'evaluations'])
-                ->get();
-        }
-
         // Jefe team data — show assigned employees and their evaluation status
         $teamData = collect();
         if ($user->isJefeArea()) {
@@ -117,15 +110,62 @@ class EvaluationController extends Controller
                 ->get();
         }
 
-        $areasForCreate = Area::where('is_active', true)->orderBy('name')->get();
+        // Default settings for evaluation creation form
+        $defaultPeriodType = \App\Models\Setting::get('default_period_type', 'trimestral');
+        $defaultAudience   = \App\Models\Setting::get('default_target_audience', 'todos');
 
-        return view('evaluations.index', compact('evaluations', 'groupedEvaluations', 'areas', 'templates', 'areasForCreate', 'templatesManage', 'teamData', 'myEvaluations'));
+        return view('evaluations.index', compact('evaluations', 'groupedEvaluations', 'areas', 'templates', 'teamData', 'myEvaluations', 'defaultPeriodType', 'defaultAudience'));
     }
 
     public function create(Request $request)
     {
         // Redirect to the unified evaluations page (crear tab is handled client-side)
         return redirect()->route('evaluations.index');
+    }
+
+    public function preview(Request $request)
+    {
+        $user = $request->user();
+        if (!$user->canCreateEvaluations()) { abort(403); }
+
+        $request->validate([
+            'template_id'      => ['nullable', 'exists:evaluation_templates,id'],
+            'target_audience'  => ['nullable', 'in:todos,empleados,jefes'],
+        ]);
+
+        $audience = $request->input('target_audience', 'todos');
+
+        $employeesQuery = User::where('is_active', true)->with(['person', 'area', 'roles']);
+
+        if ($request->filled('template_id')) {
+            $template = \App\Models\EvaluationTemplate::with('areas')->find($request->template_id);
+            if ($template && $template->areas->isNotEmpty()) {
+                $areaIds = $template->areas->pluck('id');
+                $employeesQuery->whereIn('area_id', $areaIds);
+            }
+        }
+
+        $allUsers = $employeesQuery->get();
+
+        // Filter by audience
+        $users = $allUsers->filter(function (User $u) use ($audience) {
+            $isJefe = $u->roles->contains(fn($r) => in_array($r->name, ['Jefe de Área', 'Coordinador']));
+            if ($audience === 'empleados') return !$isJefe;
+            if ($audience === 'jefes')     return $isJefe;
+            return true;
+        });
+
+        $areas = $users->groupBy('area_id')->map(function ($group) {
+            return [
+                'name'  => $group->first()?->area?->name ?? 'Sin área',
+                'count' => $group->count(),
+            ];
+        })->sortBy('name')->values();
+
+        return response()->json([
+            'count'   => $users->count(),
+            'areas'   => $areas,
+        ]);
     }
 
     public function store(Request $request)
@@ -138,6 +178,7 @@ class EvaluationController extends Controller
             'period'            => ['required', 'string', 'max:100'],
             'period_type'       => ['required', 'in:trimestral,semestral,anual'],
             'evaluation_date'   => ['nullable', 'date'],
+            'due_date'          => ['nullable', 'date', 'after_or_equal:today'],
             'target_audience'   => ['nullable', 'in:todos,empleados,jefes'],
         ]);
 
@@ -197,6 +238,7 @@ class EvaluationController extends Controller
                 'period' => $data['period'],
                 'period_type' => $data['period_type'],
                 'evaluation_date' => $data['evaluation_date'] ?? null,
+                'due_date'        => $data['due_date'] ?? null,
                 'status' => 'pendiente',
                 'admission_date' => $employee?->created_at?->toDateString(),
             ]);
@@ -664,40 +706,128 @@ class EvaluationController extends Controller
         $user = $request->user();
         if (!$user->canCreateEvaluations()) { abort(403); }
 
-        $data = $request->validate([
-            'evaluation_ids'   => ['required', 'array', 'min:1'],
-            'evaluation_ids.*' => ['required', 'integer', 'exists:evaluations,id'],
-        ]);
+        // Los IDs vienen como CSV (evita max_input_vars y el delay de Alpine x-for)
+        $csv = $request->input('evaluation_ids_csv', '');
+        $ids = array_values(array_filter(array_map('intval', explode(',', $csv))));
 
-        $evaluations = Evaluation::whereIn('id', $data['evaluation_ids'])->get();
-
-        $resetCount = 0;
-        foreach ($evaluations as $evaluation) {
-            $this->resetEvaluationData($evaluation);
-
-            $this->notify($evaluation->employee_id, $evaluation->id, 'evaluation_reset',
-                'Evaluación reiniciada por RR.HH.',
-                "Tu evaluación \"{$evaluation->template->name}\" fue reiniciada por RR.HH. y quedó disponible nuevamente para diligenciar desde cero."
-            );
-
-            if ($evaluation->employee?->area_id) {
-                $jefe = User::where('area_id', $evaluation->employee->area_id)
-                    ->where('id', '!=', $evaluation->employee_id)
-                    ->whereHas('roles', fn ($q) => $q->where('slug', 'jefe_area'))
-                    ->first();
-
-                if ($jefe) {
-                    $this->notify($jefe->id, $evaluation->id, 'evaluation_reset',
-                        'Evaluación reiniciada por RR.HH.',
-                        "La evaluación de {$evaluation->employee->name} fue reiniciada y quedó nuevamente en estado pendiente."
-                    );
-                }
-            }
-
-            $resetCount++;
+        if (empty($ids)) {
+            return back()->with('error', 'No se seleccionaron evaluaciones.');
         }
 
-        return back()->with('success', "Se reiniciaron {$resetCount} evaluación(es) correctamente. Los empleados han sido notificados.");
+        // Confirmar que existen (una sola query)
+        $confirmed = Evaluation::whereIn('id', $ids)->pluck('id')->all();
+
+        DB::transaction(function () use ($confirmed) {
+            $now = now();
+
+            // 1. Limpiar respuestas en un solo UPDATE
+            DB::table('evaluation_responses')
+                ->whereIn('evaluation_id', $confirmed)
+                ->update([
+                    'auto_score'      => null,
+                    'evaluator_score' => null,
+                    'comment'         => null,
+                    'updated_at'      => $now,
+                ]);
+
+            // 2. Resetear evaluaciones en un solo UPDATE
+            DB::table('evaluations')
+                ->whereIn('id', $confirmed)
+                ->update([
+                    'status'                 => 'pendiente',
+                    'observations'           => null,
+                    'obs_organizacional'     => null,
+                    'obs_cargo'              => null,
+                    'obs_responsabilidades'  => null,
+                    'reopen_reason'          => null,
+                    'reopen_deadline'        => null,
+                    'reopened_at'            => null,
+                    'reopened_by'            => null,
+                    'total_auto_score'       => null,
+                    'total_evaluator_score'  => null,
+                    'final_score'            => null,
+                    'updated_at'             => $now,
+                ]);
+
+            // 3. Eliminar planes de desarrollo en un solo DELETE
+            DB::table('development_plans')
+                ->whereIn('evaluation_id', $confirmed)
+                ->delete();
+
+            // 4. Notificaciones en lote — una por empleado
+            // Cargar solo los datos mínimos necesarios
+            $evalData = DB::table('evaluations as e')
+                ->join('users as u', 'u.id', '=', 'e.employee_id')
+                ->join('evaluation_templates as t', 't.id', '=', 'e.template_id')
+                ->whereIn('e.id', $confirmed)
+                ->select('e.id as eval_id', 'e.employee_id', 'u.area_id', 't.name as template_name')
+                ->get();
+
+            // Notificaciones al empleado (bulk insert)
+            $employeeNotifs = $evalData->map(fn ($row) => [
+                'user_id'       => $row->employee_id,
+                'evaluation_id' => $row->eval_id,
+                'type'          => 'evaluation_reset',
+                'title'         => 'Evaluación reiniciada por RR.HH.',
+                'message'       => "Tu evaluación \"{$row->template_name}\" fue reiniciada y está disponible nuevamente.",
+                'read_at'       => null,
+                'created_at'    => $now,
+                'updated_at'    => $now,
+            ])->all();
+
+            foreach (array_chunk($employeeNotifs, 500) as $chunk) {
+                DB::table('evaluation_notifications')->insert($chunk);
+            }
+
+            // Notificaciones al jefe: agrupar por área para evitar duplicados
+            // Solo notificar al jefe UNA vez por área (resumen)
+            $areaGroups = $evalData->groupBy('area_id')->filter(fn ($g, $areaId) => $areaId !== null);
+
+            if ($areaGroups->isNotEmpty()) {
+                // Obtener jefes por área en UNA sola query
+                $areaIds = $areaGroups->keys()->all();
+                $jefes = DB::table('users as u')
+                    ->join('user_has_roles as ur', 'ur.user_id', '=', 'u.id')
+                    ->join('roles as r', 'r.id', '=', 'ur.role_id')
+                    ->whereIn('u.area_id', $areaIds)
+                    ->where('r.slug', 'jefe_area')
+                    ->select('u.id as user_id', 'u.area_id')
+                    ->get()
+                    ->keyBy('area_id');
+
+                $jefeNotifs = [];
+                foreach ($areaGroups as $areaId => $evals) {
+                    $jefe = $jefes->get($areaId);
+                    if (! $jefe) continue;
+
+                    // No notificar al jefe si es también el empleado evaluado
+                    $employeeIds = $evals->pluck('employee_id')->unique();
+                    if ($employeeIds->contains($jefe->user_id)) continue;
+
+                    $count = $evals->count();
+                    // Usar el primer eval_id como referencia
+                    $firstEvalId = $evals->first()->eval_id;
+
+                    $jefeNotifs[] = [
+                        'user_id'       => $jefe->user_id,
+                        'evaluation_id' => $firstEvalId,
+                        'type'          => 'evaluation_reset',
+                        'title'         => 'Evaluaciones reiniciadas por RR.HH.',
+                        'message'       => "Se reiniciaron {$count} evaluación(es) de tu área y quedaron nuevamente en estado pendiente.",
+                        'read_at'       => null,
+                        'created_at'    => $now,
+                        'updated_at'    => $now,
+                    ];
+                }
+
+                foreach (array_chunk($jefeNotifs, 500) as $chunk) {
+                    DB::table('evaluation_notifications')->insert($chunk);
+                }
+            }
+        });
+
+        $count = count($confirmed);
+        return back()->with('success', "Se reiniciaron {$count} evaluación(es) correctamente.");
     }
 
     private function resetEvaluationData(Evaluation $evaluation): void

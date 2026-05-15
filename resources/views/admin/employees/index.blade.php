@@ -255,7 +255,9 @@
 
                     @if($user->id !== auth()->id())
                     <form method="POST" action="{{ route('admin.employees.toggle-active', $user) }}"
-                          onsubmit="return confirm('{{ $user->is_active ? '¿Inactivar a ' . addslashes(($user->person?->first_name ?? '') . ' ' . ($user->person?->last_name ?? '')) . '? No podrá ingresar al sistema.' : '¿Activar a ' . addslashes(($user->person?->first_name ?? '') . ' ' . ($user->person?->last_name ?? '')) . '?' }}');">
+                          data-confirm-title="{{ $user->is_active ? 'Inactivar empleado' : 'Activar empleado' }}"
+                          data-confirm="{{ $user->is_active ? 'El empleado ' . addslashes(($user->person?->first_name ?? '') . ' ' . ($user->person?->last_name ?? '')) . ' no podrá ingresar al sistema.' : 'Se habilitará el acceso al sistema para ' . addslashes(($user->person?->first_name ?? '') . ' ' . ($user->person?->last_name ?? '')) . '.' }}"
+                          data-confirm-variant="{{ $user->is_active ? 'warning' : 'info' }}">
                         @csrf
                         @method('PATCH')
                         @if($user->is_active)

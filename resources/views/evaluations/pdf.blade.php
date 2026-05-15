@@ -373,7 +373,16 @@
         $grandEvalTotal += $evalSum;
     }
 
-    $scoreClass = function($score) {
+    $scoreClass = function($score) use ($scoringRanges) {
+        if ($scoringRanges->count()) {
+            foreach ($scoringRanges->sortByDesc('min_score') as $range) {
+                if ((float)$score >= (float)$range->min_score) {
+                    return 'score-' . $range->color;
+                }
+            }
+            return 'score-' . ($scoringRanges->sortBy('min_score')->first()->color ?? 'red');
+        }
+        // Fallback hardcoded
         if ($score >= 91) return 'score-green';
         if ($score >= 71) return 'score-blue';
         if ($score >= 50) return 'score-yellow';
@@ -445,17 +454,42 @@
 {{-- 1. INSTRUCTIONS --}}
 <div class="section-title">1. INSTRUCCIONES</div>
 <div class="instructions-box">
-    <p>La evaluación de desempeño, tiene como finalidad calificar objetivamente el desarrollo de la labor y la adaptación, con base en la observación, los hechos, los resultados y el comportamiento del evaluado en el cargo que desempeña.</p>
-    <p>Esta evaluación debe realizarse en compañía del colaborador, con un alto grado de criterio y objetividad, desde el punto de vista de la justicia y desarrollo humano; por lo cual es necesario que la calificación haga referencia a la línea de conducta del evaluado con base en las competencias en el lapso establecido y no a hechos aislados.</p>
-    <p>El sistema de calificación tiene cinco alternativas las cuales se enumeran del 1 al 5:</p>
-    <ul>
-        <li><strong>1:</strong> Tiene deficiencias muy significativas en el cumplimiento</li>
-        <li><strong>2:</strong> Tiene algunas deficiencias en el cumplimiento</li>
-        <li><strong>3:</strong> Cumple</li>
-        <li><strong>4:</strong> Tiende a exceder el cumplimiento</li>
-        <li><strong>5:</strong> Excede frecuentemente de manera significativa el cumplimiento</li>
-    </ul>
-    <p>Le recordamos leer detalladamente los criterios de evaluación antes de responder.</p>
+@php
+    $scaleDefaults = [
+        1 => 'Tiene deficiencias muy significativas en el cumplimiento',
+        2 => 'Tiene algunas deficiencias en el cumplimiento',
+        3 => 'Cumple',
+        4 => 'Tiende a exceder el cumplimiento',
+        5 => 'Excede frecuentemente de manera significativa el cumplimiento',
+    ];
+    $scaleLabels = $template?->score_scale ?? [];
+
+    // Intro paragraphs: from template or hardcoded fallback
+    $introParagraphs = [];
+    if ($template?->instructions) {
+        foreach (explode("\n", $template->instructions) as $line) {
+            $line = trim($line);
+            if ($line !== '') {
+                $introParagraphs[] = $line;
+            }
+        }
+    } else {
+        $introParagraphs = [
+            'La evaluación de desempeño, tiene como finalidad calificar objetivamente el desarrollo de la labor y la adaptación, con base en la observación, los hechos, los resultados y el comportamiento del evaluado en el cargo que desempeña.',
+            'Esta evaluación debe realizarse en compañía del colaborador, con un alto grado de criterio y objetividad, desde el punto de vista de la justicia y desarrollo humano; por lo cual es necesario que la calificación haga referencia a la línea de conducta del evaluado con base en las competencias en el lapso establecido y no a hechos aislados.',
+        ];
+    }
+@endphp
+@foreach($introParagraphs as $paragraph)
+    <p>{{ $paragraph }}</p>
+@endforeach
+<p>El sistema de calificación tiene cinco alternativas las cuales se enumeran del 1 al 5:</p>
+<ul>
+    @for($s = 1; $s <= 5; $s++)
+    <li><strong>{{ $s }}:</strong> {{ $scaleLabels[$s] ?? $scaleDefaults[$s] }}</li>
+    @endfor
+</ul>
+<p>Le recordamos leer detalladamente los criterios de evaluación antes de responder.</p>
 </div>
 
 {{-- 2. EMPLOYEE DATA --}}
@@ -474,16 +508,16 @@
         <td class="data-value">{{ $evaluator?->positionType?->name ?? '—' }}</td>
     </tr>
     <tr>
-        <td class="data-label">Fecha de ingreso:</td>
-        <td class="data-value">{{ $evaluation->admission_date?->format('d/m/Y') ?? ($employee?->person?->hire_date?->format('d/m/Y') ?? '—') }}</td>
+        <td class="data-label">Período a Evaluar:</td>
+        <td class="data-value">{{ $periodLabels[$evaluation->period_type] ?? ucfirst($evaluation->period_type) }}</td>
         <td class="data-label">Área:</td>
         <td class="data-value">{{ $employee?->area?->name ?? '—' }}</td>
     </tr>
     <tr>
-        <td class="data-label">Período a Evaluar:</td>
-        <td class="data-value">{{ $periodLabels[$evaluation->period_type] ?? ucfirst($evaluation->period_type) }}</td>
         <td class="data-label">Fecha de Evaluación:</td>
         <td class="data-value">{{ $evaluation->evaluation_date?->format('d/m/Y') ?? '—' }}</td>
+        <td class="data-label"></td>
+        <td class="data-value"></td>
     </tr>
 </table>
 
@@ -638,24 +672,6 @@
 {{-- ═══════════════════════════════════════════════════ --}}
 {{-- DEVELOPMENT PLAN                                   --}}
 {{-- ═══════════════════════════════════════════════════ --}}
-{{-- SIGNATURES                                         --}}
-{{-- ═══════════════════════════════════════════════════ --}}
-<table class="signatures-table">
-    <tr>
-        <td style="width: 33%;">
-            <div class="signature-line"></div><br>
-            <span class="signature-label">Firma del Evaluador</span>
-        </td>
-        <td style="width: 33%;">
-            <div class="signature-line"></div><br>
-            <span class="signature-label">Firma del Evaluado</span>
-        </td>
-        <td style="width: 33%;">
-            <div class="signature-line"></div><br>
-            <span class="signature-label">Vo. Bo. De Talento Humano</span>
-        </td>
-    </tr>
-</table>
 
 </body>
 </html>

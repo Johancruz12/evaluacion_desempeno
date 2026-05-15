@@ -12,9 +12,14 @@
     $isEvaluator = $user->isAdmin() || $isJefeEvaluatingEmployee;
     // Employee: locked once status is completada or revisada
     // Evaluator: locked when revisada OR when jefe has submitted their evaluation
+    // Also locked if evaluation is past its due_date
+    $isPastDue   = $evaluation->due_date && $evaluation->due_date->isPast()
+                   && !in_array($evaluation->status, ['completada', 'cerrada', 'revisada']);
     $isReadOnly  = ($isEmployee && in_array($evaluation->status, ['completada', 'revisada']))
                 || ($isEvaluator && $evaluation->status === 'revisada')
-                || ($isJefeEvaluatingEmployee && $evaluation->evaluator_submitted_at !== null);
+                || ($isJefeEvaluatingEmployee && $evaluation->evaluator_submitted_at !== null)
+                || $evaluation->status === 'cerrada'
+                || $isPastDue;
     $canBuild    = $evaluation->status !== 'revisada' && $user->isAdmin();
     $autoEvalComplete = $evaluation->hasCompletedAutoEvaluation();
     $responsesMap = $evaluation->responses->keyBy('criteria_id');
@@ -142,6 +147,17 @@
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                         {{ ucfirst($evaluation->period_type) }} · {{ $evaluation->period }}
                     </span>
+                    @if($evaluation->due_date)
+                    @php
+                        $duePast = $evaluation->due_date->isPast();
+                        $dueSoon = !$duePast && $evaluation->due_date->diffInDays(now()) <= 3;
+                    @endphp
+                    <span class="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold border
+                        {{ $duePast ? 'bg-rose-50 text-rose-700 border-rose-200' : ($dueSoon ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-600 border-slate-200') }}">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        {{ $duePast ? 'Vencida' : 'Cierre' }}: {{ $evaluation->due_date->format('d/m/Y') }}
+                    </span>
+                    @endif
                 </div>
             </div>
         </div>
@@ -200,9 +216,12 @@
                     </button>
                     @endif
                     @if($isEvaluator && !$isReadOnly && $evaluation->status === 'completada' && $user->isAdmin())
-                    <form method="POST" action="{{ route('evaluations.complete', $evaluation) }}">
+                    <form method="POST" action="{{ route('evaluations.complete', $evaluation) }}"
+                          data-confirm-title="¿Cerrar evaluación definitivamente?"
+                          data-confirm="Una vez cerrada, ningún participante podrá modificar calificaciones ni respuestas. Esta acción no se puede deshacer."
+                          data-confirm-variant="warning">
                         @csrf
-                        <button type="submit" onclick="return confirm('⚠️ ¿Confirmar cierre definitivo de esta evaluación?\n\nUna vez cerrada, ningún participante podrá modificar calificaciones ni respuestas. Esta acción no se puede deshacer.')"
+                        <button type="submit"
                             class="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-semibold transition-all shadow-md shadow-emerald-500/20 hover:shadow-lg hover:shadow-emerald-500/20">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                             Cerrar evaluación definitivamente
@@ -227,7 +246,21 @@
     </div>
 
     {{-- ── ROLE-BASED INSTRUCTION BANNER ── --}}
-    @if($isJefeEvaluatingEmployee && $isReadOnly)
+    @if($isPastDue && $evaluation->status !== 'cerrada')
+    <div class="rounded-2xl border overflow-hidden bg-rose-50 border-rose-200">
+        <div class="flex items-start gap-4 p-4 sm:p-5">
+            <div class="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center bg-rose-100">
+                <svg class="w-5 h-5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div class="flex-1 min-w-0">
+                <h3 class="text-sm font-bold text-rose-800">⏰ Fecha límite vencida</h3>
+                <p class="text-xs text-rose-700 mt-1 leading-relaxed">
+                    El plazo para completar esta evaluación venció el <strong>{{ $evaluation->due_date->format('d/m/Y') }}</strong>. Ya no es posible registrar o modificar respuestas.
+                </p>
+            </div>
+        </div>
+    </div>
+    @elseif($isJefeEvaluatingEmployee && $isReadOnly)
     <div class="rounded-2xl border overflow-hidden bg-purple-50 border-purple-200">
         <div class="flex items-start gap-4 p-4 sm:p-5">
             <div class="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center bg-purple-100">
@@ -507,10 +540,10 @@
                             </tr>
                             @endforeach
                             @if(!($evaluation->template->scoringRanges ?? [])->count())
-                            <tr><td class="px-4 py-3">91 – 110</td><td class="px-4 py-3 font-bold text-emerald-700">Sobrepasa las expectativas</td></tr>
-                            <tr><td class="px-4 py-3">71 – 90</td><td class="px-4 py-3 font-bold text-blue-700">Buen desempeño</td></tr>
-                            <tr><td class="px-4 py-3">50 – 70</td><td class="px-4 py-3 font-bold text-amber-700">Cumple las expectativas</td></tr>
-                            <tr><td class="px-4 py-3">&lt; 50</td><td class="px-4 py-3 font-bold text-rose-700">Requiere mejora</td></tr>
+                            <tr><td class="px-4 py-3">91 – 110</td><td class="px-4 py-3 font-bold text-emerald-700">Sobre pasa las expectativas</td></tr>
+                            <tr><td class="px-4 py-3">71 – 90</td><td class="px-4 py-3 font-bold text-blue-700">Se destaca por su buen desempeño</td></tr>
+                            <tr><td class="px-4 py-3">50 – 70</td><td class="px-4 py-3 font-bold text-amber-700">Cumple con lo esperado</td></tr>
+                            <tr><td class="px-4 py-3">&lt; 50</td><td class="px-4 py-3 font-bold text-rose-700">No cumple con todos los requerimientos del cargo, requiere plan de mejoramiento de inmediato</td></tr>
                             @endif
                         </tbody>
                     </table>
@@ -700,7 +733,7 @@
         <div class="flex justify-end">
             @if($isEmployee)
             <button type="submit"
-                    onclick="return confirm('⚠️ ¿Finalizar y enviar tu autoevaluación?\n\nUna vez enviada, no podrás modificar tus respuestas. Asegúrate de haber revisado todos los criterios.')"
+                    id="btn-submit-autoevaluation"
                     class="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl transition-all shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 text-sm hover:-translate-y-0.5 active:translate-y-0">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                 Guardar y finalizar evaluación
@@ -732,7 +765,7 @@
                 </div>
             </div>
             <button type="submit"
-                    onclick="return confirm('⚠️ ¿Finalizar y enviar tu calificación?\n\nUna vez enviada, no podrás modificar las notas ni las observaciones. Asegúrate de haber revisado todo antes de continuar.')"
+                    id="btn-submit-evaluator"
                     class="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl transition-all shadow-lg shadow-emerald-500/20 text-sm whitespace-nowrap flex-shrink-0">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                 Finalizar y enviar calificación
@@ -876,7 +909,9 @@
                         <td class="px-4 py-3 text-xs text-slate-400">{{ $plan->observaciones ?? '—' }}</td>
                         @if($planCanEdit)
                         <td class="px-4 py-3">
-                            <form method="POST" action="{{ route('development-plans.destroy',$plan) }}" class="inline" onsubmit="return confirm('⚠️ ¿Eliminar este ítem del plan de desarrollo?\n\nSe perderá la actividad y sus observaciones. Esta acción no se puede deshacer.')">
+                            <form method="POST" action="{{ route('development-plans.destroy',$plan) }}" class="inline"
+                                  data-confirm-title="¿Eliminar este ítem?"
+                                  data-confirm="Se perderá la actividad y sus observaciones. Esta acción no se puede deshacer.">
                                 @csrf @method('DELETE')
                                 <button class="inline-flex items-center gap-1 text-xs text-rose-600 hover:text-white font-semibold bg-rose-100 hover:bg-rose-600 px-2.5 py-1.5 rounded-lg border border-rose-200 hover:border-rose-600 transition-all duration-200">
                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -992,6 +1027,39 @@
     </div>
 </div>
 @endif
+
+@push('scripts')
+<script>
+(function () {
+    // Confirm before submitting autoevaluation
+    var btnAuto = document.getElementById('btn-submit-autoevaluation');
+    if (btnAuto) {
+        btnAuto.addEventListener('click', function(e) {
+            e.preventDefault();
+            AppConfirm({
+                title: '¿Finalizar autoevaluación?',
+                message: 'Una vez enviada, no podrás modificar tus respuestas. Asegúrate de haber revisado todos los criterios.',
+                variant: 'warning',
+                confirmText: 'Sí, finalizar'
+            }).then(function(ok) { if (ok) btnAuto.closest('form').submit(); });
+        });
+    }
+    // Confirm before evaluator submits rating
+    var btnEval = document.getElementById('btn-submit-evaluator');
+    if (btnEval) {
+        btnEval.addEventListener('click', function(e) {
+            e.preventDefault();
+            AppConfirm({
+                title: '¿Finalizar calificación?',
+                message: 'Una vez enviada, no podrás modificar las notas ni las observaciones. Asegúrate de haber revisado todo.',
+                variant: 'warning',
+                confirmText: 'Sí, finalizar'
+            }).then(function(ok) { if (ok) btnEval.closest('form').submit(); });
+        });
+    }
+}());
+</script>
+@endpush
 
 @endsection
 
@@ -1219,7 +1287,8 @@ function evalBuilder() {
         },
 
         async removeCriteria(criteriaId, sectionId) {
-            if (!confirm('⚠️ ¿Eliminar este criterio de la evaluación?\n\nSe eliminarán las respuestas asociadas a este criterio. Esta acción no se puede deshacer.')) return;
+            const ok = await AppConfirm({ title: '¿Eliminar criterio?', message: 'Se eliminarán las respuestas asociadas. Esta acción no se puede deshacer.', variant: 'danger' });
+            if (!ok) return;
             if (this.loading) return;
             this.loading = true;
             try {

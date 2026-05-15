@@ -20,12 +20,15 @@ class SectionType extends Model
         ];
     }
 
-    /** Cached map: slug => SectionType */
+    /** In-memory map: slug => SectionType (memoized per request) */
+    protected static ?\Illuminate\Support\Collection $cachedMap = null;
+
     public static function map(): \Illuminate\Support\Collection
     {
-        return cache()->remember('section_types_map', 60, function () {
-            return static::orderBy('order')->orderBy('id')->get()->keyBy('slug');
-        });
+        if (static::$cachedMap === null) {
+            static::$cachedMap = static::orderBy('order')->orderBy('id')->get()->keyBy('slug');
+        }
+        return static::$cachedMap;
     }
 
     public static function activeOptions(): \Illuminate\Support\Collection
@@ -35,6 +38,7 @@ class SectionType extends Model
 
     public static function flushCache(): void
     {
+        static::$cachedMap = null;
         cache()->forget('section_types_map');
     }
 

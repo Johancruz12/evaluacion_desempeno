@@ -61,19 +61,34 @@ class EvaluationTemplateController extends Controller
     public function update(Request $request, EvaluationTemplate $template)
     {
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
+            'name'             => ['required', 'string', 'max:255'],
+            'description'      => ['nullable', 'string'],
+            'instructions'     => ['nullable', 'string'],
+            'score_scale'      => ['nullable', 'array'],
+            'score_scale.*'    => ['nullable', 'string', 'max:500'],
             'position_type_id' => ['nullable', 'exists:position_types,id'],
-            'is_active' => ['boolean'],
-            'area_ids' => ['nullable', 'array'],
-            'area_ids.*' => ['exists:areas,id'],
+            'is_active'        => ['boolean'],
+            'area_ids'         => ['nullable', 'array'],
+            'area_ids.*'       => ['exists:areas,id'],
         ]);
 
+        // Build score_scale array (keys 1-5)
+        $scaleInput = $data['score_scale'] ?? [];
+        $scoreScale = null;
+        if (!empty(array_filter($scaleInput))) {
+            $scoreScale = [];
+            for ($i = 1; $i <= 5; $i++) {
+                $scoreScale[$i] = $scaleInput[$i] ?? '';
+            }
+        }
+
         $template->update([
-            'name' => $data['name'],
-            'description' => $data['description'] ?? null,
+            'name'             => $data['name'],
+            'description'      => $data['description'] ?? null,
+            'instructions'     => $data['instructions'] ?? null,
+            'score_scale'      => $scoreScale,
             'position_type_id' => $data['position_type_id'] ?? null,
-            'is_active' => $data['is_active'] ?? false,
+            'is_active'        => $data['is_active'] ?? false,
         ]);
 
         $template->areas()->sync($data['area_ids'] ?? []);

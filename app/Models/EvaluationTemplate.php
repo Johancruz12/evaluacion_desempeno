@@ -9,11 +9,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class EvaluationTemplate extends Model
 {
-    protected $fillable = ['name', 'description', 'position_type_id', 'is_active'];
+    protected $fillable = ['name', 'description', 'instructions', 'score_scale', 'position_type_id', 'is_active'];
 
     protected function casts(): array
     {
-        return ['is_active' => 'boolean'];
+        return [
+            'is_active'   => 'boolean',
+            'score_scale' => 'array',
+        ];
     }
 
     public function positionType(): BelongsTo

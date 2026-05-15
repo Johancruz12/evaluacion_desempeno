@@ -438,5 +438,134 @@ function notifBell() {
 }
 </script>
 @stack('scripts')
+
+{{-- ════════════════════════════════════════════════════════════ --}}
+{{-- DIÁLOGO DE CONFIRMACIÓN GLOBAL (reemplaza confirm() nativo) --}}
+{{-- ════════════════════════════════════════════════════════════ --}}
+<div id="app-confirm-overlay"
+     style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,0.6);backdrop-filter:blur(4px);"
+     class="flex items-center justify-center p-4">
+    <div id="app-confirm-box"
+         style="transform:scale(0.95);opacity:0;transition:transform .2s ease,opacity .2s ease;"
+         class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+        {{-- Header --}}
+        <div id="app-confirm-header" class="px-6 py-5 flex items-start gap-4">
+            <div id="app-confirm-icon"
+                 class="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 mt-0.5">
+            </div>
+            <div class="flex-1 min-w-0">
+                <h3 id="app-confirm-title" class="text-base font-bold text-slate-800 leading-snug"></h3>
+                <p id="app-confirm-message" class="text-sm text-slate-500 mt-1 leading-relaxed"></p>
+            </div>
+        </div>
+        {{-- Divider --}}
+        <div class="border-t border-slate-100 mx-6"></div>
+        {{-- Actions --}}
+        <div class="px-6 py-4 flex justify-end gap-3">
+            <button id="app-confirm-cancel"
+                    class="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all">
+                Cancelar
+            </button>
+            <button id="app-confirm-ok"
+                    class="px-5 py-2.5 text-sm font-bold text-white rounded-xl transition-all shadow-lg">
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var overlay  = document.getElementById('app-confirm-overlay');
+    var box      = document.getElementById('app-confirm-box');
+    var header   = document.getElementById('app-confirm-header');
+    var iconEl   = document.getElementById('app-confirm-icon');
+    var titleEl  = document.getElementById('app-confirm-title');
+    var msgEl    = document.getElementById('app-confirm-message');
+    var cancelBtn= document.getElementById('app-confirm-cancel');
+    var okBtn    = document.getElementById('app-confirm-ok');
+    var _resolve = null;
+
+    var variants = {
+        danger: {
+            header   : 'bg-gradient-to-r from-rose-50 to-red-50',
+            icon     : 'bg-rose-100',
+            iconSvg  : '<svg class="w-6 h-6 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>',
+            okClass  : 'bg-rose-600 hover:bg-rose-500 shadow-rose-500/30',
+        },
+        warning: {
+            header   : 'bg-gradient-to-r from-amber-50 to-orange-50',
+            icon     : 'bg-amber-100',
+            iconSvg  : '<svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>',
+            okClass  : 'bg-amber-600 hover:bg-amber-500 shadow-amber-500/30',
+        },
+        info: {
+            header   : 'bg-gradient-to-r from-blue-50 to-sky-50',
+            icon     : 'bg-blue-100',
+            iconSvg  : '<svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+            okClass  : 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/30',
+        },
+    };
+
+    function show(opts) {
+        var v = variants[opts.variant || 'danger'];
+        // Reset header classes
+        header.className = 'px-6 py-5 flex items-start gap-4 ' + v.header;
+        iconEl.className = 'w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 mt-0.5 ' + v.icon;
+        iconEl.innerHTML = v.iconSvg;
+        titleEl.textContent = opts.title || 'Confirmar acción';
+        msgEl.textContent   = opts.message || '';
+        okBtn.textContent   = opts.confirmText || 'Confirmar';
+        okBtn.className     = 'px-5 py-2.5 text-sm font-bold text-white rounded-xl transition-all shadow-lg ' + v.okClass;
+        cancelBtn.textContent = opts.cancelText || 'Cancelar';
+        overlay.style.display = 'flex';
+        requestAnimationFrame(function() {
+            box.style.transform = 'scale(1)';
+            box.style.opacity   = '1';
+        });
+    }
+
+    function hide(result) {
+        box.style.transform = 'scale(0.95)';
+        box.style.opacity   = '0';
+        setTimeout(function() { overlay.style.display = 'none'; }, 180);
+        if (_resolve) { _resolve(result); _resolve = null; }
+    }
+
+    // Public API — returns a Promise<boolean>
+    window.AppConfirm = function(opts) {
+        if (typeof opts === 'string') opts = { message: opts };
+        return new Promise(function(resolve) {
+            _resolve = resolve;
+            show(opts);
+        });
+    };
+
+    okBtn.addEventListener('click',     function() { hide(true);  });
+    cancelBtn.addEventListener('click', function() { hide(false); });
+    overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) hide(false);
+    });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && overlay.style.display !== 'none') hide(false);
+    });
+
+    // Auto-intercept forms with data-confirm attribute
+    document.addEventListener('submit', function(e) {
+        var form = e.target;
+        var msg  = form.dataset.confirm;
+        var title= form.dataset.confirmTitle;
+        var variant = form.dataset.confirmVariant || 'danger';
+        if (!msg) return;
+        if (form._confirmed) { form._confirmed = false; return; }
+        e.preventDefault();
+        AppConfirm({ title: title || 'Confirmar acción', message: msg, variant: variant })
+            .then(function(ok) {
+                if (!ok) return;
+                form._confirmed = true;
+                form.submit();
+            });
+    }, true);
+}());
+</script>
 </body>
 </html>

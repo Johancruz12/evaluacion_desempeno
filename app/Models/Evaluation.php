@@ -16,12 +16,14 @@ class Evaluation extends Model
         'reopen_reason', 'reopen_deadline', 'reopened_at', 'reopened_by',
         'total_auto_score', 'total_evaluator_score', 'final_score',
         'evaluator_submitted_at',
+        'due_date',
     ];
 
     protected function casts(): array
     {
         return [
             'evaluation_date' => 'date',
+            'due_date'        => 'date',
             'admission_date' => 'date',
             'reopen_deadline' => 'date',
             'reopened_at' => 'datetime',
@@ -119,14 +121,30 @@ class Evaluation extends Model
     {
         $s = $score ?? (float) $this->final_score;
 
-        if ($s >= 91) {
-            return ['label' => 'Sobrepasa las expectativas', 'color' => 'green'];
-        } elseif ($s >= 71) {
-            return ['label' => 'Buen desempeño', 'color' => 'blue'];
-        } elseif ($s >= 50) {
-            return ['label' => 'Cumple las expectativas', 'color' => 'yellow'];
+        // Use template scoring ranges from DB if available
+        $this->loadMissing('template.scoringRanges');
+        $ranges = $this->template?->scoringRanges ?? collect();
+
+        if ($ranges->count()) {
+            foreach ($ranges->sortByDesc('min_score') as $range) {
+                if ($s >= (float) $range->min_score) {
+                    return ['label' => $range->label, 'color' => $range->color];
+                }
+            }
+            // Score is below the lowest range
+            $lowest = $ranges->sortBy('min_score')->first();
+            return ['label' => $lowest->label, 'color' => $lowest->color];
         }
-        return ['label' => 'Requiere mejora', 'color' => 'red'];
+
+        // Fallback hardcoded — aligned with the PDF scoring range table
+        if ($s >= 91) {
+            return ['label' => 'Sobre pasa las expectativas', 'color' => 'green'];
+        } elseif ($s >= 71) {
+            return ['label' => 'Se destaca por su buen desempeño', 'color' => 'blue'];
+        } elseif ($s >= 50) {
+            return ['label' => 'Cumple con lo esperado', 'color' => 'yellow'];
+        }
+        return ['label' => 'No cumple con todos los requerimientos del cargo, requiere plan de mejoramiento de inmediato', 'color' => 'red'];
     }
 
     /** Check if all criteria have an auto_score filled. */
