@@ -246,92 +246,171 @@ $countCompleted = $evaluations->whereIn('status', ['completada','revisada'])->co
 
         {{-- Area filter (only for admins and jefes) --}}
         @if($user->isAdmin() || $isJefe)
+        @php
+            $activeAreaName = $areas->firstWhere('id', request('area_id'))?->name;
+            $statusLabels = ['pendiente'=>'Pendiente','en_progreso'=>'En progreso','completada'=>'Completada','revisada'=>'Revisada'];
+            $activeStatus = request('status') ? ($statusLabels[request('status')] ?? null) : null;
+            $hasFilters = $activeAreaName || $activeStatus;
+        @endphp
         <div class="anim-fade-up bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-5">
             <div class="h-1 bg-gradient-to-r from-blue-400 via-sky-400 to-indigo-400"></div>
-            <div class="p-4">
-                <form method="GET" action="{{ route('evaluations.index') }}" class="flex flex-col sm:flex-row items-start sm:items-end gap-3">
-                    <div class="flex-1 min-w-0 w-full sm:w-auto"
-                         x-data="{
+            <div class="px-5 py-4 space-y-3">
+                <form method="GET" action="{{ route('evaluations.index') }}"
+                      class="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 items-end">
+
+                    {{-- Área combobox --}}
+                    <div x-data="{
                             open: false,
-                            query: '{{ $areas->firstWhere('id', request('area_id'))?->name ?? '' }}',
+                            query: '{{ $activeAreaName ?? '' }}',
                             selectedId: '{{ request('area_id', '') }}',
+                            selectedName: '{{ $activeAreaName ?? '' }}',
                             areas: {{ Js::from($areas->map(fn($a) => ['id' => $a->id, 'name' => $a->name])->values()) }},
                             get filtered() {
                                 if (!this.query) return this.areas;
                                 const q = this.query.toLowerCase();
                                 return this.areas.filter(a => a.name.toLowerCase().includes(q));
                             },
-                            select(area) {
-                                this.selectedId = area.id;
-                                this.query = area.name;
-                                this.open = false;
-                            },
-                            clear() {
-                                this.selectedId = '';
-                                this.query = '';
-                                this.open = false;
-                            }
+                            select(area) { this.selectedId = area.id; this.selectedName = area.name; this.query = area.name; this.open = false; },
+                            clear() { this.selectedId = ''; this.selectedName = ''; this.query = ''; this.open = false; }
                          }"
-                         @click.outside="open = false">
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Filtrar por área</label>
+                         @click.outside="open = false"
+                         class="relative">
+                        <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Filtrar por área</label>
                         <input type="hidden" name="area_id" :value="selectedId">
+
                         <div class="relative">
-                            <div class="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                                <svg class="w-4 h-4"
-                                     :class="selectedId ? 'text-blue-500' : 'text-slate-400'"
-                                     fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                            </div>
+                            <span class="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none flex items-center"
+                                  :class="selectedId ? 'text-blue-500' : 'text-slate-400'">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                                </svg>
+                            </span>
+
                             <input type="text"
                                    x-model="query"
                                    @focus="open = true"
-                                   @input="open = true; selectedId = ''; if (!query) clear()"
-                                   @keydown.escape="open = false; query = selectedId ? query : ''"
+                                   @input="open = true; selectedId = ''; selectedName = ''"
+                                   @keydown.escape="open = false"
                                    @keydown.enter.prevent="if (filtered.length === 1) select(filtered[0])"
-                                   placeholder="Buscar área..."
+                                   placeholder="Buscar y seleccionar…"
                                    autocomplete="off"
-                                   class="w-full sm:w-64 pl-9 pr-9 py-3 rounded-xl text-sm transition-all"
+                                   class="w-full text-sm rounded-xl border bg-slate-50 transition-all outline-none"
+                                   style="padding: 0.625rem 2.25rem 0.625rem 2.25rem; line-height: 1.25rem;"
                                    :class="selectedId
-                                       ? 'border-2 border-blue-500 bg-blue-50 text-blue-800 font-semibold focus:ring-2 focus:ring-blue-500 focus:ring-offset-1'
-                                       : 'border border-slate-200 bg-slate-50 text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white'">
-                            <button x-show="query || selectedId" type="button" @click="clear()"
-                                    class="absolute inset-y-0 right-3 flex items-center text-slate-400 hover:text-slate-600">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                       ? 'border-blue-500 bg-blue-50/60 text-blue-800 font-semibold ring-2 ring-blue-100'
+                                       : 'border-slate-200 text-slate-700 hover:border-slate-300 focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100'">
+
+                            <button x-show="query || selectedId" x-cloak type="button" @click="clear()"
+                                    class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500 transition-colors p-0.5 rounded">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                                </svg>
                             </button>
-                            <div x-show="open" x-cloak
-                                 class="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-56 overflow-y-auto">
+
+                            <div x-show="open" x-cloak x-transition.opacity.duration.150ms
+                                 class="absolute z-50 top-full mt-1.5 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
                                 <div x-show="filtered.length === 0" class="px-4 py-3 text-sm text-slate-400 italic">Sin resultados</div>
                                 <template x-for="area in filtered" :key="area.id">
                                     <button type="button" @click="select(area)"
-                                            class="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-                                            :class="{ 'bg-blue-50 text-blue-700 font-semibold': area.id == selectedId }"
-                                            x-text="area.name"></button>
+                                            class="w-full text-left px-4 py-2 text-sm transition-colors flex items-center gap-2"
+                                            :class="area.id == selectedId
+                                                ? 'bg-blue-50 text-blue-700 font-semibold'
+                                                : 'text-slate-700 hover:bg-slate-50'">
+                                        <svg x-show="area.id == selectedId" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600 flex-shrink-0">
+                                            <polyline points="20 6 9 17 4 12"/>
+                                        </svg>
+                                        <span x-text="area.name"></span>
+                                    </button>
                                 </template>
                             </div>
                         </div>
                     </div>
-                    <div class="flex-1 min-w-0 w-full sm:w-auto">
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Filtrar por estado</label>
-                        <select name="status" class="w-full sm:w-48 px-4 py-3 border border-slate-200 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-slate-50 focus:bg-white">
-                            <option value="">Todos los estados</option>
-                            <option value="pendiente" {{ request('status') == 'pendiente' ? 'selected' : '' }}>Pendiente</option>
-                            <option value="en_progreso" {{ request('status') == 'en_progreso' ? 'selected' : '' }}>En progreso</option>
-                            <option value="completada" {{ request('status') == 'completada' ? 'selected' : '' }}>Completada</option>
-                            <option value="revisada" {{ request('status') == 'revisada' ? 'selected' : '' }}>Revisada</option>
-                        </select>
+
+                    {{-- Estado --}}
+                    <div class="relative">
+                        <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Filtrar por estado</label>
+                        <div class="relative">
+                            <span class="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none flex items-center"
+                                  :class="'{{ request('status') }}' ? 'text-blue-500' : 'text-slate-400'">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                                </svg>
+                            </span>
+                            <select name="status"
+                                    class="w-full text-sm rounded-xl border bg-slate-50 text-slate-700 hover:border-slate-300 focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 transition-all outline-none appearance-none cursor-pointer
+                                           {{ request('status') ? 'border-blue-500 bg-blue-50/60 text-blue-800 font-semibold ring-2 ring-blue-100' : 'border-slate-200' }}"
+                                    style="padding: 0.625rem 2.25rem 0.625rem 2.25rem; line-height: 1.25rem;">
+                                <option value="">Todos los estados</option>
+                                <option value="pendiente"   {{ request('status') == 'pendiente'   ? 'selected' : '' }}>Pendiente</option>
+                                <option value="en_progreso" {{ request('status') == 'en_progreso' ? 'selected' : '' }}>En progreso</option>
+                                <option value="completada"  {{ request('status') == 'completada'  ? 'selected' : '' }}>Completada</option>
+                                <option value="revisada"    {{ request('status') == 'revisada'    ? 'selected' : '' }}>Revisada</option>
+                            </select>
+                            <span class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="6 9 12 15 18 9"/>
+                                </svg>
+                            </span>
+                        </div>
                     </div>
-                    <div class="flex gap-2">
-                        <button type="submit" class="btn-bounce inline-flex items-center gap-2 bg-blue-700 hover:bg-blue-600 text-white font-semibold px-5 py-3 rounded-xl transition-all text-sm border border-blue-700">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                            Filtrar
+
+                    {{-- Botón Filtrar --}}
+                    <div>
+                        <button type="submit"
+                                class="btn-bounce inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-semibold rounded-xl transition-all text-sm shadow-sm shadow-blue-500/30 w-full md:w-auto"
+                                style="padding: 0.625rem 1.25rem;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                            </svg>
+                            Aplicar filtros
                         </button>
-                        @if(request('area_id') || request('status'))
-                        <a href="{{ route('evaluations.index') }}" class="inline-flex items-center gap-1.5 px-4 py-3 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-100 rounded-xl transition-colors border border-slate-300">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                            Limpiar
-                        </a>
-                        @endif
                     </div>
                 </form>
+
+                {{-- Chips de filtros activos --}}
+                @if($hasFilters)
+                <div class="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100">
+                    <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Filtros activos:</span>
+
+                    @if($activeAreaName)
+                    <span class="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-3 py-1 text-xs font-semibold">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/>
+                        </svg>
+                        Área: {{ $activeAreaName }}
+                        <a href="{{ route('evaluations.index', array_filter(['status' => request('status')])) }}"
+                           class="text-blue-400 hover:text-rose-500 transition-colors -mr-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                        </a>
+                    </span>
+                    @endif
+
+                    @if($activeStatus)
+                    <span class="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-3 py-1 text-xs font-semibold">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        Estado: {{ $activeStatus }}
+                        <a href="{{ route('evaluations.index', array_filter(['area_id' => request('area_id')])) }}"
+                           class="text-emerald-400 hover:text-rose-500 transition-colors -mr-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                        </a>
+                    </span>
+                    @endif
+
+                    <a href="{{ route('evaluations.index') }}"
+                       class="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-rose-500 transition-colors ml-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/>
+                        </svg>
+                        Limpiar todo
+                    </a>
+                </div>
+                @endif
             </div>
         </div>
         @endif
