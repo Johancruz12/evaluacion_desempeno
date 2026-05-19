@@ -15,6 +15,7 @@ use App\Http\Controllers\Admin\PositionTypeController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\SettingController;
+use App\Http\Controllers\Admin\PeriodController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/login');
@@ -102,6 +103,7 @@ Route::middleware('auth')->group(function () {
         Route::put('/templates/{template}',       [EvaluationTemplateController::class, 'update'])->name('templates.update');
         Route::delete('/templates/{template}',    [EvaluationTemplateController::class, 'destroy'])->name('templates.destroy');
 
+        Route::post('/templates/{template}/cleanup-participants', [EvaluationTemplateController::class, 'cleanupParticipants'])->name('templates.cleanup-participants');
         Route::post('/templates/{template}/reorder-sections', [EvaluationTemplateController::class, 'reorderSections'])->name('templates.reorder-sections');
         Route::post('/sections/{section}/reorder-criteria',   [EvaluationTemplateController::class, 'reorderCriteria'])->name('sections.reorder-criteria');
         Route::post('/templates/{template}/sections',         [EvaluationTemplateController::class, 'storeSection'])->name('templates.sections.store');
@@ -146,6 +148,12 @@ Route::middleware('auth')->group(function () {
 
         Route::get('/settings',  [SettingController::class, 'index'])->name('settings.index');
         Route::post('/settings', [SettingController::class, 'update'])->name('settings.update');
+
+        // Period management
+        Route::post('/periods',                [PeriodController::class, 'store'])->name('periods.store');
+        Route::delete('/periods/{period}',     [PeriodController::class, 'destroy'])->name('periods.destroy');
+        Route::patch('/periods/{period}/toggle',[PeriodController::class, 'toggle'])->name('periods.toggle');
+        Route::post('/periods/generate',       [PeriodController::class, 'generate'])->name('periods.generate');
 
 
     });

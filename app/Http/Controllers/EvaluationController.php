@@ -111,10 +111,12 @@ class EvaluationController extends Controller
         }
 
         // Default settings for evaluation creation form
-        $defaultPeriodType = \App\Models\Setting::get('default_period_type', 'trimestral');
-        $defaultAudience   = \App\Models\Setting::get('default_target_audience', 'todos');
+        $defaultPeriodType  = \App\Models\Setting::get('default_period_type', 'trimestral');
+        $defaultAudience    = \App\Models\Setting::get('default_target_audience', 'todos');
+        $availablePeriods   = \App\Models\Period::where('is_active', true)
+                                ->orderByDesc('year')->orderBy('sort_order')->get();
 
-        return view('evaluations.index', compact('evaluations', 'groupedEvaluations', 'areas', 'templates', 'teamData', 'myEvaluations', 'defaultPeriodType', 'defaultAudience'));
+        return view('evaluations.index', compact('evaluations', 'groupedEvaluations', 'areas', 'templates', 'teamData', 'myEvaluations', 'defaultPeriodType', 'defaultAudience', 'availablePeriods'));
     }
 
     public function create(Request $request)
@@ -175,12 +177,18 @@ class EvaluationController extends Controller
 
         $data = $request->validate([
             'template_id'       => ['required', 'exists:evaluation_templates,id'],
-            'period'            => ['required', 'string', 'max:100'],
-            'period_type'       => ['required', 'in:trimestral,semestral,anual'],
+            'period'            => ['required', 'string', 'max:100', 'exists:periods,label'],
             'evaluation_date'   => ['nullable', 'date'],
             'due_date'          => ['nullable', 'date', 'after_or_equal:today'],
             'target_audience'   => ['nullable', 'in:todos,empleados,jefes'],
         ]);
+
+        // Derive period_type from the periods table
+        $periodRecord = \App\Models\Period::where('label', $data['period'])->where('is_active', true)->first();
+        if (! $periodRecord) {
+            return back()->withErrors(['period' => 'El período seleccionado no está disponible.'])->withInput();
+        }
+        $data['period_type'] = $periodRecord->type;
 
         $template = EvaluationTemplate::with(['areas', 'sections.criteria'])->find($data['template_id']);
 
@@ -190,10 +198,8 @@ class EvaluationController extends Controller
             $selectedAreaIds = Area::where('is_active', true)->pluck('id');
         }
 
+        // Period type is derived from the DB, no year restriction needed (admin controls available periods)
         $year = (int) substr($data['period'], 0, 4);
-        if ($year < (int) now()->year) {
-            return back()->withErrors(['period' => 'No se permiten períodos de años anteriores.'])->withInput();
-        }
 
         $employees = User::where('is_active', true)
             ->whereIn('area_id', $selectedAreaIds);

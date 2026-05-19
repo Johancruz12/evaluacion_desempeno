@@ -4,13 +4,16 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Area;
+use App\Models\Evaluation;
 use App\Models\EvaluationTemplate;
 use App\Models\EvaluationSection;
 use App\Models\EvaluationCriteria;
 use App\Models\PositionType;
 use App\Models\ScoringRange;
 use App\Models\SectionType;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class EvaluationTemplateController extends Controller
 {
@@ -55,7 +58,20 @@ class EvaluationTemplateController extends Controller
         $positionTypes = PositionType::with('area')->where('is_active', true)->get();
         $areas = Area::where('is_active', true)->orderBy('name')->get();
         $sectionTypes = SectionType::activeOptions();
-        return view('admin.templates.edit', compact('template', 'positionTypes', 'areas', 'sectionTypes'));
+
+        // Count evaluations that don't match the current area configuration
+        $templateAreaIds = $template->areas->pluck('id');
+        if ($templateAreaIds->isEmpty()) {
+            // Global template: any existing evaluations are potentially orphaned
+            $orphanedCount = $template->evaluations()->count();
+        } else {
+            // Specific areas: orphaned = employees NOT in those areas
+            $orphanedCount = $template->evaluations()
+                ->whereHas('employee', fn ($q) => $q->whereNotIn('area_id', $templateAreaIds))
+                ->count();
+        }
+
+        return view('admin.templates.edit', compact('template', 'positionTypes', 'areas', 'sectionTypes', 'orphanedCount'));
     }
 
     public function update(Request $request, EvaluationTemplate $template)
@@ -91,9 +107,80 @@ class EvaluationTemplateController extends Controller
             'is_active'        => $data['is_active'] ?? false,
         ]);
 
-        $template->areas()->sync($data['area_ids'] ?? []);
+        $newAreaIds     = $data['area_ids'] ?? [];
+        $oldAreaIds     = $template->areas()->pluck('areas.id')->all();
+        $removedAreaIds = array_values(array_diff($oldAreaIds, $newAreaIds));
+
+        $template->areas()->sync($newAreaIds);
+
+        // Build the set of evaluation IDs to delete
+        $toDelete = collect();
+
+        // Case A: areas were explicitly removed in this save
+        if (!empty($removedAreaIds)) {
+            $toDelete = $toDelete->merge(
+                Evaluation::where('template_id', $template->id)
+                    ->whereHas('employee', fn ($q) => $q->whereIn('area_id', $removedAreaIds))
+                    ->pluck('id')
+            );
+        }
+
+        // Case B: template now has specific areas → also clean up any pre-existing
+        // stale evaluations for employees whose area is NOT in the current list.
+        // This handles orphaned evaluations from before this logic was in place.
+        if (!empty($newAreaIds)) {
+            $toDelete = $toDelete->merge(
+                Evaluation::where('template_id', $template->id)
+                    ->whereHas('employee', fn ($q) => $q->whereNotIn('area_id', $newAreaIds))
+                    ->pluck('id')
+            );
+        }
+
+        $toDelete = $toDelete->unique()->values()->all();
+
+        if (!empty($toDelete)) {
+            DB::transaction(function () use ($toDelete) {
+                DB::table('evaluation_responses')->whereIn('evaluation_id', $toDelete)->delete();
+                DB::table('development_plans')->whereIn('evaluation_id', $toDelete)->delete();
+                DB::table('evaluation_notifications')->whereIn('evaluation_id', $toDelete)->delete();
+                DB::table('evaluations')->whereIn('id', $toDelete)->delete();
+            });
+        }
 
         return back()->with('success', 'Plantilla de evaluación actualizada correctamente.');
+    }
+
+    /**
+     * Explicitly delete all evaluations that don't match the template's current area configuration.
+     * Used for cleaning up stale evaluations when the template is already in global mode.
+     */
+    public function cleanupParticipants(EvaluationTemplate $template)
+    {
+        $template->load('areas');
+        $areaIds = $template->areas->pluck('id');
+
+        if ($areaIds->isEmpty()) {
+            // Template is global (no areas): remove ALL evaluations
+            $toDelete = Evaluation::where('template_id', $template->id)->pluck('id')->all();
+        } else {
+            // Template has specific areas: remove evaluations for employees NOT in those areas
+            $toDelete = Evaluation::where('template_id', $template->id)
+                ->whereHas('employee', fn ($q) => $q->whereNotIn('area_id', $areaIds))
+                ->pluck('id')->all();
+        }
+
+        if (empty($toDelete)) {
+            return back()->with('info', 'No hay evaluaciones huérfanas que limpiar.');
+        }
+
+        DB::transaction(function () use ($toDelete) {
+            DB::table('evaluation_responses')->whereIn('evaluation_id', $toDelete)->delete();
+            DB::table('development_plans')->whereIn('evaluation_id', $toDelete)->delete();
+            DB::table('evaluation_notifications')->whereIn('evaluation_id', $toDelete)->delete();
+            DB::table('evaluations')->whereIn('id', $toDelete)->delete();
+        });
+
+        return back()->with('success', count($toDelete) . ' evaluación(es) eliminadas correctamente.');
     }
 
     public function destroy(EvaluationTemplate $template)

@@ -250,14 +250,64 @@ $countCompleted = $evaluations->whereIn('status', ['completada','revisada'])->co
             <div class="h-1 bg-gradient-to-r from-blue-400 via-sky-400 to-indigo-400"></div>
             <div class="p-4">
                 <form method="GET" action="{{ route('evaluations.index') }}" class="flex flex-col sm:flex-row items-start sm:items-end gap-3">
-                    <div class="flex-1 min-w-0 w-full sm:w-auto">
+                    <div class="flex-1 min-w-0 w-full sm:w-auto"
+                         x-data="{
+                            open: false,
+                            query: '{{ $areas->firstWhere('id', request('area_id'))?->name ?? '' }}',
+                            selectedId: '{{ request('area_id', '') }}',
+                            areas: {{ Js::from($areas->map(fn($a) => ['id' => $a->id, 'name' => $a->name])->values()) }},
+                            get filtered() {
+                                if (!this.query) return this.areas;
+                                const q = this.query.toLowerCase();
+                                return this.areas.filter(a => a.name.toLowerCase().includes(q));
+                            },
+                            select(area) {
+                                this.selectedId = area.id;
+                                this.query = area.name;
+                                this.open = false;
+                            },
+                            clear() {
+                                this.selectedId = '';
+                                this.query = '';
+                                this.open = false;
+                            }
+                         }"
+                         @click.outside="open = false">
                         <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Filtrar por área</label>
-                        <select name="area_id" class="w-full sm:w-64 px-4 py-3 border border-slate-200 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-slate-50 focus:bg-white">
-                            <option value="">Todas las áreas</option>
-                            @foreach($areas as $area)
-                                <option value="{{ $area->id }}" {{ request('area_id') == $area->id ? 'selected' : '' }}>{{ $area->name }}</option>
-                            @endforeach
-                        </select>
+                        <input type="hidden" name="area_id" :value="selectedId">
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                                <svg class="w-4 h-4"
+                                     :class="selectedId ? 'text-blue-500' : 'text-slate-400'"
+                                     fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                            </div>
+                            <input type="text"
+                                   x-model="query"
+                                   @focus="open = true"
+                                   @input="open = true; selectedId = ''; if (!query) clear()"
+                                   @keydown.escape="open = false; query = selectedId ? query : ''"
+                                   @keydown.enter.prevent="if (filtered.length === 1) select(filtered[0])"
+                                   placeholder="Buscar área..."
+                                   autocomplete="off"
+                                   class="w-full sm:w-64 pl-9 pr-9 py-3 rounded-xl text-sm transition-all"
+                                   :class="selectedId
+                                       ? 'border-2 border-blue-500 bg-blue-50 text-blue-800 font-semibold focus:ring-2 focus:ring-blue-500 focus:ring-offset-1'
+                                       : 'border border-slate-200 bg-slate-50 text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white'">
+                            <button x-show="query || selectedId" type="button" @click="clear()"
+                                    class="absolute inset-y-0 right-3 flex items-center text-slate-400 hover:text-slate-600">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                            <div x-show="open" x-cloak
+                                 class="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-56 overflow-y-auto">
+                                <div x-show="filtered.length === 0" class="px-4 py-3 text-sm text-slate-400 italic">Sin resultados</div>
+                                <template x-for="area in filtered" :key="area.id">
+                                    <button type="button" @click="select(area)"
+                                            class="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                                            :class="{ 'bg-blue-50 text-blue-700 font-semibold': area.id == selectedId }"
+                                            x-text="area.name"></button>
+                                </template>
+                            </div>
+                        </div>
                     </div>
                     <div class="flex-1 min-w-0 w-full sm:w-auto">
                         <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Filtrar por estado</label>
@@ -670,25 +720,32 @@ $countCompleted = $evaluations->whereIn('status', ['completada','revisada'])->co
                                 <div class="w-7 h-7 rounded-full bg-gradient-to-r from-blue-500 to-sky-500 flex items-center justify-center text-white text-xs font-bold shadow-md">3</div>
                                 <label class="text-xs font-bold text-slate-600 uppercase tracking-wider">Período de evaluación</label>
                             </div>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-xs text-slate-500 mb-1">Tipo</label>
-                                    <select name="period_type" id="period-type" required onchange="updatePeriods()"
-                                            class="w-full px-4 py-3 border border-slate-200 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-slate-50 focus:bg-white">
-                                        <option value="">Tipo de período…</option>
-                                        <option value="trimestral" {{ (old('period_type', $defaultPeriodType))=='trimestral'?'selected':'' }}>Trimestral</option>
-                                        <option value="semestral"  {{ (old('period_type', $defaultPeriodType))=='semestral'?'selected':'' }}>Semestral</option>
-                                        <option value="anual"      {{ (old('period_type', $defaultPeriodType))=='anual'?'selected':'' }}>Anual</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-xs text-slate-500 mb-1">Período</label>
-                                    <select name="period" id="period-select" required
-                                            class="w-full px-4 py-3 border border-slate-200 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-slate-50 focus:bg-white">
-                                        <option value="">— elige tipo primero —</option>
-                                    </select>
-                                </div>
+                            @if($availablePeriods->isEmpty())
+                            <div class="flex items-center gap-3 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl px-4 py-3 text-sm">
+                                <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                No hay períodos disponibles. <a href="{{ route('admin.settings.index') }}" class="font-semibold underline ml-1">Configura períodos en Ajustes →</a>
                             </div>
+                            @else
+                            <div>
+                                <label class="block text-xs text-slate-500 mb-1">Período</label>
+                                <select name="period" required
+                                        class="w-full px-4 py-3 border border-slate-200 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-slate-50 focus:bg-white">
+                                    <option value="">Selecciona un período…</option>
+                                    @foreach($availablePeriods->groupBy('year')->sortKeysDesc() as $yr => $yPeriods)
+                                    <optgroup label="{{ $yr }}">
+                                        @foreach($yPeriods as $p)
+                                        <option value="{{ $p->label }}" {{ old('period') == $p->label ? 'selected' : '' }}>
+                                            {{ $p->label }} — {{ ['trimestral'=>'Trimestral','semestral'=>'Semestral','anual'=>'Anual'][$p->type] ?? $p->type }}
+                                        </option>
+                                        @endforeach
+                                    </optgroup>
+                                    @endforeach
+                                </select>
+                                @error('period')
+                                <p class="text-xs text-rose-500 mt-1">{{ $message }}</p>
+                                @enderror
+                            </div>
+                            @endif
                         </div>
 
                         {{-- Step 3: Date --}}
@@ -741,33 +798,6 @@ $countCompleted = $evaluations->whereIn('status', ['completada','revisada'])->co
 @push('scripts')
 <script>
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('[id^="modal-"]').forEach(m => m.classList.add('hidden')); });
-
-const currentYear = {{ now()->year }};
-function updatePeriods() {
-    const type = document.getElementById('period-type')?.value;
-    const sel  = document.getElementById('period-select');
-    if (!sel) return;
-    sel.innerHTML = '';
-    if (!type) { sel.innerHTML = '<option value="">— elige tipo primero —</option>'; return; }
-    let opts = [];
-    if (type === 'trimestral') {
-        opts = [`${currentYear}-T1`,`${currentYear}-T2`,`${currentYear}-T3`,`${currentYear}-T4`];
-    } else if (type === 'semestral') {
-        opts = [`${currentYear}-S1`,`${currentYear}-S2`];
-    } else if (type === 'anual') {
-        opts = [`${currentYear}`];
-    }
-    opts.forEach(o => {
-        const el = document.createElement('option');
-        el.value = o; el.textContent = o;
-        if ('{{ old('period') }}' === o) el.selected = true;
-        sel.appendChild(el);
-    });
-}
-document.addEventListener('DOMContentLoaded', function() {
-    const pt = document.getElementById('period-type');
-    if (pt && pt.value) updatePeriods();
-});
 </script>
 @endpush
 @endsection
