@@ -20,6 +20,7 @@ class User extends Authenticatable
         'login', 'password', 'person_id', 'area_id',
         'position_type_id', 'employee_code', 'is_active',
         'must_change_password', 'is_super_admin', 'salomon_codigo',
+        'work_email',
     ];
 
     protected $hidden = ['password', 'remember_token'];

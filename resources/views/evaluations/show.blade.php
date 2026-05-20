@@ -832,10 +832,11 @@
     @endif
 
     {{-- Score Summary --}}
-    @if($evaluation->final_score || $evaluation->total_auto_score)
+    @if($evaluation->total_auto_score || $evaluation->total_evaluator_score)
     @php
-        $finalScore = (float)$evaluation->final_score;
-        $interp = $evaluation->final_score ? $evaluation->getInterpretation() : null;
+        $finalScore  = (float)$evaluation->final_score;
+        $interp      = $evaluation->final_score ? $evaluation->getInterpretation() : null;
+        $jefeSubmitted = $evaluation->evaluator_submitted_at !== null;
     @endphp
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center gap-3">
@@ -845,28 +846,67 @@
             <h2 class="font-bold text-slate-800 text-sm">Resumen de puntajes</h2>
         </div>
         <div class="p-5">
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+            <div class="grid grid-cols-1 sm:grid-cols-{{ $isEvaluator ? '3' : '2' }} gap-4 mb-5">
+                {{-- Auto-evaluación --}}
                 <div class="text-center p-5 bg-blue-50 rounded-2xl border border-blue-100">
                     <p class="text-xs font-bold text-blue-500 uppercase tracking-wider">Total Autoevaluación</p>
-                    <p class="text-4xl font-black text-blue-700 mt-2">{{ number_format((float)$evaluation->total_auto_score,1) }}</p>
+                    @if($evaluation->total_auto_score)
+                        <p class="text-4xl font-black text-blue-700 mt-2">{{ number_format((float)$evaluation->total_auto_score, 1) }}</p>
+                    @else
+                        <p class="text-sm text-blue-400 mt-3 italic">Pendiente</p>
+                    @endif
                 </div>
+
+                {{-- Calificación jefe — solo visible para el evaluador/admin --}}
                 @if($isEvaluator)
                 <div class="text-center p-5 bg-sky-50 rounded-2xl border border-sky-100">
                     <p class="text-xs font-bold text-sky-500 uppercase tracking-wider">Total Jefe</p>
-                    <p class="text-4xl font-black text-sky-700 mt-2">{{ number_format((float)$evaluation->total_evaluator_score,1) }}</p>
+                    @if($evaluation->total_evaluator_score)
+                        <p class="text-4xl font-black text-sky-700 mt-2">{{ number_format((float)$evaluation->total_evaluator_score, 1) }}</p>
+                    @else
+                        <p class="text-sm text-sky-400 mt-3 italic">Sin calificar</p>
+                    @endif
                 </div>
                 @endif
-                <div class="text-center p-5 bg-emerald-50 rounded-2xl border border-emerald-100">
-                    <p class="text-xs font-bold text-emerald-500 uppercase tracking-wider">Puntaje Final</p>
-                    <p class="text-4xl font-black text-emerald-700 mt-2">{{ $evaluation->final_score ? number_format($finalScore,1) : '—' }}</p>
+
+                {{-- Nota final — solo cuando ambas partes están completas --}}
+                <div class="text-center p-5 rounded-2xl border {{ $evaluation->final_score ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-200' }}">
+                    <p class="text-xs font-bold uppercase tracking-wider {{ $evaluation->final_score ? 'text-emerald-500' : 'text-amber-500' }}">Puntaje Final</p>
+                    @if($evaluation->final_score)
+                        <p class="text-4xl font-black text-emerald-700 mt-2">{{ number_format($finalScore, 1) }}</p>
+                    @else
+                        <div class="mt-2">
+                            <p class="text-2xl font-black text-amber-400">—</p>
+                            <p class="text-xs text-amber-600 mt-1 leading-snug">
+                                @if(!$jefeSubmitted)
+                                    Disponible cuando el jefe<br>finalice su calificación
+                                @else
+                                    Calculando…
+                                @endif
+                            </p>
+                        </div>
+                    @endif
                 </div>
             </div>
+
+            {{-- Resultado interpretado — solo cuando hay nota final --}}
             @if($interp)
             @php $ic = ['green'=>'bg-emerald-100 text-emerald-800 border-emerald-200','blue'=>'bg-blue-100 text-blue-800 border-blue-200','yellow'=>'bg-amber-100 text-amber-800 border-amber-200','red'=>'bg-rose-100 text-rose-800 border-rose-200']; @endphp
             <div class="p-5 rounded-2xl border {{ $ic[$interp['color']] }} text-center">
                 <p class="text-sm font-semibold mb-1">Resultado final</p>
                 <p class="text-2xl font-black">{{ $interp['label'] }}</p>
                 <p class="text-sm mt-1 opacity-75">Puntaje: {{ number_format($finalScore,1) }} pts</p>
+            </div>
+            @elseif($evaluation->total_auto_score && !$jefeSubmitted && $isEmployee)
+            {{-- Mensaje informativo para el empleado cuando está esperando al jefe --}}
+            <div class="p-4 rounded-xl border border-amber-200 bg-amber-50 flex items-start gap-3">
+                <svg class="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <div>
+                    <p class="text-sm font-semibold text-amber-800">Autoevaluación completada — esperando calificación del jefe</p>
+                    <p class="text-xs text-amber-700 mt-0.5">Tu nota final estará disponible una vez que tu jefe de área complete y finalice su calificación.</p>
+                </div>
             </div>
             @endif
         </div>
@@ -1357,21 +1397,55 @@ document.getElementById('save-form')?.addEventListener('submit', function(e) {
     container.innerHTML = '';
     const el = document.querySelector('[x-data="evalBuilder()"]');
     const comp = el ? Alpine.$data(el) : null;
+
+    // Desempaquetar el proxy reactivo de Alpine a un objeto plano
+    // (Object.entries sobre un Proxy puede fallar en algunos entornos)
+    let rawScores = {};
     if (comp && comp.scores) {
-        for (const [id, s] of Object.entries(comp.scores)) {
-            // Always add criteria_id (required by validation)
+        try {
+            rawScores = JSON.parse(JSON.stringify(comp.scores));
+        } catch (ex) {
+            rawScores = comp.scores;
+        }
+    }
+
+    const entries = Object.entries(rawScores);
+
+    if (entries.length === 0) {
+        // Fallback: recopilar puntajes desde los botones activos en el DOM
+        document.querySelectorAll('[data-criteria-id]').forEach(row => {
+            const id = row.dataset.criteriaId;
+            if (!id) return;
+            // criteria_id siempre presente
+            const ci = document.createElement('input');
+            ci.type = 'hidden'; ci.name = `responses[${id}][criteria_id]`; ci.value = id;
+            container.appendChild(ci);
+            // auto_score: buscar botón activo de la columna MI CALIFICACIÓN
+            const activeBtn = row.querySelector('[data-score-type="auto"].score-btn-active, [data-score-value].score-btn-active');
+            if (activeBtn) {
+                const score = activeBtn.dataset.scoreValue || activeBtn.dataset.score;
+                if (score) {
+                    const si = document.createElement('input');
+                    si.type = 'hidden'; si.name = `responses[${id}][auto_score]`; si.value = score;
+                    container.appendChild(si);
+                }
+            }
+        });
+    } else {
+        for (const [id, s] of entries) {
+            // criteria_id siempre presente
             const criteriaInput = document.createElement('input');
             criteriaInput.type = 'hidden';
             criteriaInput.name = `responses[${id}][criteria_id]`;
             criteriaInput.value = id;
             container.appendChild(criteriaInput);
-            
-            if (s.auto !== null) {
+
+            if (s.auto !== null && s.auto !== undefined) {
                 const i = document.createElement('input');
                 i.type = 'hidden'; i.name = `responses[${id}][auto_score]`; i.value = s.auto;
                 container.appendChild(i);
             }
-            if (s.evaluator !== null) {
+            if (s.evaluator !== null && s.evaluator !== undefined) {
                 const i = document.createElement('input');
                 i.type = 'hidden'; i.name = `responses[${id}][evaluator_score]`; i.value = s.evaluator;
                 container.appendChild(i);
@@ -1383,6 +1457,7 @@ document.getElementById('save-form')?.addEventListener('submit', function(e) {
             }
         }
     }
+
     this.submit();
 });
 </script>

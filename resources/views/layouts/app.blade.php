@@ -173,17 +173,85 @@
         </div>
     </div>
 
-    {{-- User card --}}
-    <div class="px-4 py-3 border-b border-blue-100 flex-shrink-0">
-        <div class="flex items-center gap-3 bg-blue-50/80 rounded-xl p-3 hover:bg-blue-50 transition-colors border border-blue-100/50">
+    {{-- User card con dropdown para jefes --}}
+    @php $sidebarUser = auth()->user(); @endphp
+    <div class="px-4 py-3 border-b border-blue-100 flex-shrink-0"
+         x-data="{ open: {{ session('_work_email_saved') ? 'true' : 'false' }}, editing: false }">
+        {{-- Tarjeta clickeable --}}
+        <button @click="open = !open" type="button"
+                class="w-full flex items-center gap-3 bg-blue-50/80 rounded-xl p-3 hover:bg-blue-50 transition-colors border border-blue-100/50 text-left">
             <div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-sky-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-md shadow-blue-300/30">
-                {{ strtoupper(substr(auth()->user()->name, 0, 1)) }}
+                {{ strtoupper(substr($sidebarUser->name, 0, 1)) }}
             </div>
-            <div class="min-w-0">
-                <p class="text-slate-800 text-sm font-medium truncate">{{ auth()->user()->name }}</p>
-                <p class="text-blue-500 text-xs truncate">{{ auth()->user()->roles->first()?->description ?? 'Sin rol' }}</p>
+            <div class="min-w-0 flex-1">
+                <p class="text-slate-800 text-sm font-medium truncate">{{ $sidebarUser->name }}</p>
+                <p class="text-blue-500 text-xs truncate">{{ $sidebarUser->roles->first()?->description ?? 'Sin rol' }}</p>
+            </div>
+            <svg class="w-4 h-4 text-slate-400 flex-shrink-0 transition-transform duration-200"
+                 :class="open ? 'rotate-180' : ''"
+                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+
+        {{-- Panel desplegable — solo para jefes y admins --}}
+        @if($sidebarUser->isJefeArea() || $sidebarUser->isAdmin())
+        <div x-show="open" x-transition x-cloak
+             class="mt-2 rounded-xl border border-blue-100 bg-white shadow-sm overflow-hidden">
+
+            {{-- Correo corporativo --}}
+            <div class="px-3 py-2.5">
+                <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">Correo corporativo</p>
+
+                {{-- Mostrar correo actual --}}
+                <div x-show="!editing">
+                    @if($sidebarUser->work_email)
+                    <div class="flex items-center justify-between gap-2">
+                        <p class="text-xs text-slate-700 truncate font-medium">{{ $sidebarUser->work_email }}</p>
+                        <button @click="editing = true" type="button"
+                                class="shrink-0 text-[10px] font-semibold text-blue-600 hover:text-blue-800 hover:underline">
+                            Editar
+                        </button>
+                    </div>
+                    @else
+                    <div class="flex items-center justify-between gap-2">
+                        <p class="text-xs text-amber-600 italic">Sin correo registrado</p>
+                        <button @click="editing = true" type="button"
+                                class="shrink-0 text-[10px] font-semibold text-blue-600 hover:text-blue-800 hover:underline">
+                            Agregar
+                        </button>
+                    </div>
+                    @endif
+                </div>
+
+                {{-- Formulario de edición --}}
+                <div x-show="editing" x-cloak>
+                    <form action="{{ route('profile.work-email.save') }}" method="POST" class="space-y-2">
+                        @csrf
+                        <input type="email" name="work_email" required
+                               value="{{ old('work_email', $sidebarUser->work_email) }}"
+                               placeholder="correo@junical.com.co"
+                               pattern=".+@junical\.com\.co"
+                               title="Debe ser un correo corporativo @junical.com.co"
+                               class="w-full text-xs rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400">
+                        <div class="flex gap-1.5">
+                            <button type="submit"
+                                    class="flex-1 rounded-lg bg-blue-600 py-1.5 text-[11px] font-bold text-white hover:bg-blue-700 transition">
+                                Guardar
+                            </button>
+                            <button @click="editing = false" type="button"
+                                    class="flex-1 rounded-lg bg-slate-100 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-200 transition">
+                                Cancelar
+                            </button>
+                        </div>
+                        @error('work_email')
+                        <p class="text-[10px] text-rose-600">{{ $message }}</p>
+                        @enderror
+                    </form>
+                </div>
             </div>
         </div>
+        @endif
     </div>
 
     {{-- Navigation --}}
@@ -391,6 +459,43 @@
 
     {{-- Page content --}}
     <main class="flex-1 px-4 lg:px-8 py-6 page-content">
+
+        {{-- Banner: jefes de área sin correo corporativo — solo visible en móvil (el sidebar está oculto) --}}
+        @php
+            $authUser = auth()->user();
+        @endphp
+        @if($authUser && $authUser->isJefeArea() && !$authUser->work_email)
+        <div x-data="{ open: true }" x-show="open" x-transition
+             class="mb-5 flex items-start gap-4 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 lg:hidden">
+            <div class="shrink-0 mt-0.5 text-amber-500">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3m0 3h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-semibold text-amber-800">Registra tu correo corporativo</p>
+                <p class="text-xs text-amber-700 mt-0.5 mb-3">
+                    Para recibir notificaciones cuando un empleado complete su autoevaluación.
+                </p>
+                <form action="{{ route('profile.work-email.save') }}" method="POST" class="flex items-center gap-2 max-w-sm">
+                    @csrf
+                    <input type="email" name="work_email" required placeholder="correo@junical.com.co"
+                           pattern=".+@junical\.com\.co" title="Debe ser un correo corporativo @junical.com.co"
+                           class="flex-1 text-sm rounded-lg border border-amber-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                    <button type="submit"
+                            class="shrink-0 rounded-lg bg-amber-500 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-600 transition">
+                        Guardar
+                    </button>
+                </form>
+            </div>
+            <button @click="open = false" class="shrink-0 text-amber-400 hover:text-amber-600 transition mt-0.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        @endif
+
         @yield('content')
     </main>
 </div>

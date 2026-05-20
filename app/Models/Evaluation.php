@@ -103,12 +103,14 @@ class Evaluation extends Model
         $autoPct = $autoCount > 0 ? ($autoSum / ($autoCount * 5)) * 100 : null;
         $evalPct = $evalCount > 0 ? ($evalSum / ($evalCount * 5)) * 100 : null;
 
-        // Final = promedio entre los dos cuando ambos existen
-        if ($autoPct !== null && $evalPct !== null) {
-            $finalPct = ($autoPct + $evalPct) / 2;
-        } else {
-            $finalPct = $autoPct ?? $evalPct;
-        }
+        // La nota FINAL solo se calcula cuando AMBAS partes están completas:
+        // — el empleado llenó todos los auto_score
+        // — el jefe finalizó su calificación (evaluator_submitted_at está establecido)
+        $bothComplete = $autoPct !== null
+            && $evalPct !== null
+            && $this->evaluator_submitted_at !== null;
+
+        $finalPct = $bothComplete ? ($autoPct + $evalPct) / 2 : null;
 
         $this->total_auto_score      = $autoPct !== null ? round($autoPct, 2) : null;
         $this->total_evaluator_score = $evalPct !== null ? round($evalPct, 2) : null;

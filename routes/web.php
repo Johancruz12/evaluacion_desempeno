@@ -84,6 +84,9 @@ Route::middleware('auth')->group(function () {
     Route::patch('/evaluations/bulk-reset',            [EvaluationController::class, 'resetBulk'])->name('evaluations.bulk-reset');
     Route::get('/evaluations/preview',                 [EvaluationController::class, 'preview'])->name('evaluations.preview');
 
+    // Correo corporativo del jefe/coordinador para notificaciones
+    Route::post('/profile/work-email',                 [EvaluationController::class, 'saveWorkEmail'])->name('profile.work-email.save');
+
     // Notifications
     Route::get('/notifications',                       [NotificationController::class, 'index'])->name('notifications.index');
     Route::get('/notifications/unread-count',          [NotificationController::class, 'unreadCount'])->name('notifications.unread-count');

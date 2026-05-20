@@ -9,9 +9,11 @@ use App\Models\EvaluationNotification;
 use App\Models\EvaluationResponse;
 use App\Models\EvaluationTemplate;
 use App\Models\User;
+use App\Mail\AutoEvaluationCompletedMail;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 
 class EvaluationController extends Controller
 {
@@ -391,8 +393,8 @@ class EvaluationController extends Controller
         }
 
         $request->validate([
-            'responses'                   => ['required', 'array'],
-            'responses.*.criteria_id'     => ['required', 'exists:evaluation_criteria,id'],
+            'responses'                   => ['nullable', 'array'],
+            'responses.*.criteria_id'     => ['required_with:responses', 'exists:evaluation_criteria,id'],
             'responses.*.auto_score'      => ['nullable', 'numeric', 'min:1', 'max:5'],
             'responses.*.evaluator_score' => ['nullable', 'numeric', 'min:1', 'max:5'],
             'responses.*.comment'         => ['nullable', 'string', 'max:1000'],
@@ -401,13 +403,14 @@ class EvaluationController extends Controller
         // Admin y jefe solo pueden guardar evaluator_score si el empleado completó la autoevaluación
         $canSaveEvaluatorScore = $user->isAdmin() || $isJefeEvaluatingEmployee;
         if ($canSaveEvaluatorScore && !$evaluation->hasCompletedAutoEvaluation()) {
-            $hasEvaluatorScore = collect($request->responses)->contains(fn ($r) => !empty($r['evaluator_score']));
+            $hasEvaluatorScore = collect($request->responses ?? [])->contains(fn ($r) => !empty($r['evaluator_score']));
             if ($hasEvaluatorScore) {
                 return back()->withErrors(['general' => 'El empleado debe completar su autoevaluación antes de que puedas calificarlo.']);
             }
         }
 
-        foreach ($request->responses as $responseData) {
+        // Actualizar respuestas si se enviaron (los puntajes también se guardan vía AJAX)
+        foreach (($request->responses ?? []) as $responseData) {
             $response = EvaluationResponse::where('evaluation_id', $evaluation->id)
                 ->where('criteria_id', $responseData['criteria_id'])
                 ->first();
@@ -450,6 +453,9 @@ class EvaluationController extends Controller
                 'Autoevaluación finalizada',
                 "{$evaluation->employee->name} ha completado su autoevaluación \"{$evaluation->template->name}\"."
             );
+
+            // Enviar correo corporativo al jefe si tiene work_email registrado
+            $this->sendEmailToJefe($evaluation);
 
             return back()->with('success', '¡Autoevaluación completada con éxito! Tu jefe y el área de RR.HH. han sido notificados.');
         }
@@ -865,6 +871,30 @@ class EvaluationController extends Controller
     }
 
     /**
+     * Guardar el correo corporativo del jefe/coordinador.
+     */
+    public function saveWorkEmail(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user->isJefeArea() && !$user->isAdmin()) {
+            abort(403);
+        }
+
+        $data = $request->validate([
+            'work_email' => ['required', 'email', 'max:255', 'ends_with:@junical.com.co'],
+        ], [
+            'work_email.ends_with' => 'El correo corporativo debe pertenecer al dominio @junical.com.co.',
+        ]);
+
+        $user->update(['work_email' => $data['work_email']]);
+
+        return back()
+            ->with('success', 'Correo corporativo guardado correctamente. Ahora recibirás notificaciones por email cuando un empleado complete su autoevaluación.')
+            ->with('_work_email_saved', true);
+    }
+
+    /**
      * Create a notification record.
      */
     private function notify(int $userId, int $evaluationId, string $type, string $title, string $message): void
@@ -905,4 +935,38 @@ class EvaluationController extends Controller
             }
         }
     }
+
+    /**
+     * Enviar correo corporativo al jefe/coordinador del área del empleado
+     * cuando este completa su autoevaluación.
+     */
+    private function sendEmailToJefe(Evaluation $evaluation): void
+    {
+        if (! $evaluation->employee?->area_id) {
+            return;
+        }
+
+        $jefe = User::where('area_id', $evaluation->employee->area_id)
+            ->where('id', '!=', $evaluation->employee_id)
+            ->whereHas('roles', fn ($q) => $q->where('slug', 'jefe_area'))
+            ->whereNotNull('work_email')
+            ->first();
+
+        if (! $jefe || ! $jefe->work_email) {
+            return;
+        }
+
+        try {
+            Mail::to($jefe->work_email)
+                ->send(new AutoEvaluationCompletedMail($evaluation, $jefe));
+            logger()->info("Correo enviado al jefe {$jefe->id} ({$jefe->work_email}) por autoevaluación {$evaluation->id}");
+        } catch (\Throwable $e) {
+            // No romper el flujo si falla el correo — se registra en el log con detalles
+            logger()->error("Error enviando correo al jefe {$jefe->id} ({$jefe->work_email}): " . $e->getMessage(), [
+                'exception' => $e,
+                'evaluation_id' => $evaluation->id,
+            ]);
+        }
+    }
 }
+
